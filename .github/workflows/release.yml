@@ -1,0 +1,69 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --onefile --windowed --name ClipboardMemo --icon assets/icon.png --add-data "config.json;." main.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClipboardMemo
+          path: dist/ClipboardMemo.exe
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ClipboardMemo
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ClipboardMemo ${{ github.ref_name }}
+          body: |
+            ## 鍓创鏉垮蹇樺綍 ${{ github.ref_name }}
+
+            鏋佺畝鏈湴鍓创鏉跨鐞嗗伐鍏凤紝涓撲负 AI 鐢ㄦ埛璁捐銆?
+            ### 浣跨敤鏂瑰紡
+            1. 涓嬭浇 `ClipboardMemo.exe`
+            2. 鍙屽嚮杩愯锛屾墭鐩樿嚜鍔ㄥ惎鍔?            3. 鎸?`Ctrl+Shift+V` 鍛煎嚭娴獥
+            4. 澶嶅埗鏂囨湰/鎴浘锛岃嚜鍔ㄨ褰?
+            ### 鍙樻洿
+            鏌ョ湅 [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+
+            ### 鏍￠獙
+            ```
+            sha256sum ClipboardMemo.exe
+            ```
+          files: ClipboardMemo.exe
+          draft: false
+          prerelease: false
