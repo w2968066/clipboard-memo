@@ -1,5 +1,6 @@
 """
-閰嶇疆绠＄悊妯″潡锛堝甫鍐呭瓨缂撳瓨 + 鍘熷瓙鍐欏叆锛?"""
+配置管理模块（带内存缓存 + 原子写入）
+"""
 
 import json
 import os
@@ -39,21 +40,21 @@ DEFAULT_CONFIG = {
         "3": "image_sub3", "4": "image_sub4"
     },
     "subcategory_names": {
-        "prompt_sub1": "瀛愬垎绫?", "prompt_sub2": "瀛愬垎绫?",
-        "prompt_sub3": "瀛愬垎绫?", "prompt_sub4": "瀛愬垎绫?",
-        "image_sub1": "瀛愬垎绫?", "image_sub2": "瀛愬垎绫?",
-        "image_sub3": "瀛愬垎绫?", "image_sub4": "瀛愬垎绫?"
+        "prompt_sub1": "子分类1", "prompt_sub2": "子分类2",
+        "prompt_sub3": "子分类3", "prompt_sub4": "子分类4",
+        "image_sub1": "子分类1", "image_sub2": "子分类2",
+        "image_sub3": "子分类3", "image_sub4": "子分类4"
     }
 }
 
-# ---- 鍐呭瓨缂撳瓨 ----
+# ---- 内存缓存 ----
 _config_cache = None
 _config_mtime = 0
 _config_lock = threading.Lock()
 
 
 def load_config():
-    """鍔犺浇閰嶇疆锛屼紭鍏堜娇鐢ㄥ唴瀛樼紦瀛?""
+    """加载配置，优先使用内存缓存"""
     global _config_cache, _config_mtime
 
     with _config_lock:
@@ -69,7 +70,7 @@ def load_config():
             try:
                 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                     config = json.load(f)
-                # 琛ュ叏缂哄け鐨勯粯璁ら敭
+                # 补全缺失的默认键
                 for key, value in DEFAULT_CONFIG.items():
                     if key not in config:
                         config[key] = value
@@ -87,7 +88,7 @@ def load_config():
 
 
 def save_config(config):
-    """鍘熷瓙鍐欏叆閰嶇疆"""
+    """原子写入配置"""
     global _config_cache, _config_mtime
     with _config_lock:
         _config_cache = config.copy()
@@ -101,7 +102,7 @@ def save_config(config):
             except OSError:
                 _config_mtime = 0
         except Exception:
-            # 娓呯悊涓存椂鏂囦欢
+            # 清理临时文件
             try:
                 os.remove(tmp_path)
             except OSError:
@@ -110,17 +111,17 @@ def save_config(config):
 
 
 def get_config(key, default=None):
-    """璇诲彇閰嶇疆椤癸紙甯︾紦瀛橈紝鏃犻渶姣忔閮借鏂囦欢锛?""
+    """读取配置项（带缓存，无需每次都读文件）"""
     global _config_cache
     with _config_lock:
         if _config_cache is not None:
             return _config_cache.get(key, default)
-    # 鍐峰惎鍔ㄥ洖閫€
+    # 冷启动回退
     return load_config().get(key, default)
 
 
 def set_config(key, value):
-    """璁剧疆閰嶇疆椤?""
+    """设置配置项"""
     config = load_config()
     config[key] = value
     save_config(config)
@@ -136,7 +137,7 @@ def get_subcategory_name(sc_key):
 
 
 def get_quick_categorize(tab="prompt"):
-    """鑾峰彇鎸囧畾 tab 鐨勫揩閫熷垎绫绘槧灏?""
+    """获取指定 tab 的快速分类映射"""
     config = load_config()
     key = f"quick_categorize_{tab}"
     default = DEFAULT_CONFIG.get(key, {})
