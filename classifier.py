@@ -1,27 +1,32 @@
 """
-鏂囨湰鍒嗙被鍣?鈥?澶氫俊鍙疯鍒欒瘎鍒嗗紩鎿?绾湰鍦扮畻娉曪紝闆剁綉缁滆姹傦紝淇濇姢鐢ㄦ埛闅愮
+文本分类器 — 多信号规则评分引擎
+纯本地算法，零网络请求，保护用户隐私
 
-鍒嗙被鐩爣锛?  - 'prompt'      鈫?AI 鎻愮ず璇?  - 'image'       鈫?鍥剧墖锛堢敱鍓创鏉跨洃鎺у眰鍒ゆ柇锛?  - 'other_text'  鈫?鍏朵粬鏂囨湰
+分类目标：
+  - 'prompt'      → AI 提示词
+  - 'image'       → 图片（由剪贴板监控层判断）
+  - 'other_text'  → 其他文本
 """
 
 import re
 
 
 # ============================================================
-# 淇″彿瀹氫箟锛堥缂栬瘧姝ｅ垯锛屾彁鍗囨€ц兘锛?# ============================================================
+# 信号定义（预编译正则，提升性能）
+# ============================================================
 
-# 1. 鎸囦护鎬у姩璇?鈥?鏉冮噸 4
+# 1. 指令性动词 — 权重 4
 INSTRUCTION_VERBS_CN = [
-    "甯垜", "璇峰府鎴?, "璇蜂綘", "璇蜂綘甯?, "甯繖",
-    "鍐欎竴涓?, "鍐欎竴娈?, "鍐欎竴绡?, "鍐欎竴浠?, "鍐?, "缂栧啓",
-    "鐢熸垚", "鍒涘缓", "缈昏瘧", "鎬荤粨", "姒傛嫭",
-    "鍒嗘瀽", "瑙ｉ噴", "鎻忚堪", "璇存槑", "闃愯堪",
-    "淇敼", "浼樺寲", "閲嶆瀯", "鏀硅繘",
-    "妫€鏌?, "淇", "璋冭瘯",
-    "鏁欐垜", "鎺ㄨ崘", "寤鸿", "缁欏嚭",
-    "璁捐", "瀹炵幇", "寮€鍙?,
-    "璁＄畻", "杞崲", "姣旇緝", "瀵规瘮",
-    "鏁寸悊", "瑙勫垝", "瀹夋帓", "鍒朵綔",
+    "帮我", "请帮我", "请你", "请你帮", "帮忙",
+    "写一个", "写一段", "写一篇", "写一份", "写", "编写",
+    "生成", "创建", "翻译", "总结", "概括",
+    "分析", "解释", "描述", "说明", "阐述",
+    "修改", "优化", "重构", "改进",
+    "检查", "修复", "调试",
+    "教我", "推荐", "建议", "给出",
+    "设计", "实现", "开发",
+    "计算", "转换", "比较", "对比",
+    "整理", "规划", "安排", "制作",
 ]
 
 INSTRUCTION_VERBS_EN = [
@@ -36,13 +41,14 @@ INSTRUCTION_VERBS_EN = [
     "review", "check", "improve",
 ]
 
-# 2. 瑙掕壊瀹氫箟妯″紡 鈥?鏉冮噸 5锛堥缂栬瘧锛?ROLE_PATTERNS_CN = [re.compile(p) for p in [
-    r"浣犳槸涓€涓?, r"浣犳槸[涓€鍚嶇О浣峕",
-    r"浣滀负[涓€涓€涓悕绉颁綅]", r"浣滀负涓€鍚?,
-    r"鍋囪浣犳槸", r"鍋囪浣犳槸", r"浠庣幇鍦ㄥ紑濮嬩綘鏄?,
-    r"浣犵殑瑙掕壊鏄?, r"浣犵殑韬唤鏄?,
-    r"鎵紨", r"鍏呭綋", r"鎷呬换",
-    r"浣犵幇鍦ㄦ槸", r"鎴戣浣犳壆婕?,
+# 2. 角色定义模式 — 权重 5（预编译）
+ROLE_PATTERNS_CN = [re.compile(p) for p in [
+    r"你是一个", r"你是[一名称位]",
+    r"作为[一一个名称位]", r"作为一名",
+    r"假装你是", r"假设你是", r"从现在开始你是",
+    r"你的角色是", r"你的身份是",
+    r"扮演", r"充当", r"担任",
+    r"你现在是", r"我要你扮演",
 ]]
 
 ROLE_PATTERNS_EN = [re.compile(p, re.IGNORECASE) for p in [
@@ -55,32 +61,34 @@ ROLE_PATTERNS_EN = [re.compile(p, re.IGNORECASE) for p in [
     r"you will act as",
 ]]
 
-# 3. 缁撴瀯鍖栫壒寰?鈥?鏉冮噸 2-3锛堥缂栬瘧锛?STRUCTURE_PATTERNS_CN = [(re.compile(p), w) for p, w in [
-    (r"(姝ラ|绗琜涓€浜屼笁鍥涗簲鍏竷鍏節鍗乗d]+姝?", 3),
-    (r"(棣栧厛|鐒跺悗|鏈€鍚巪鎺ョ潃|鍏舵|鍐嶆)", 3),
-    (r"(瑕佹眰|鏉′欢|瑙勫垯|闄愬埗|绾︽潫)", 2),
-    (r"(鏍煎紡|鐢╩arkdown|鐢ㄨ〃鏍紎鐢ㄥ垪琛▅鐢ㄤ唬鐮亅鐢╦son|鐢▂aml)", 2),
-    (r"(鍒哰鐐规]|鍒楀嚭|鍒椾妇|閫怺鏉￠」])", 2),
-    (r"(璇?*[:锛歖)", 2),
-    (r"(涓嶈|绂佹|閬垮厤|娉ㄦ剰|鍔″繀|蹇呴』)", 2),
-    (r"(绀轰緥|渚嬪瓙|姣斿|渚嬪|鍙傝€?", 2),
+# 3. 结构化特征 — 权重 2-3（预编译）
+STRUCTURE_PATTERNS_CN = [(re.compile(p), w) for p, w in [
+    (r"(步骤|第[一二三四五六七八九十\d]+步)", 3),
+    (r"(首先|然后|最后|接着|其次|再次)", 3),
+    (r"(要求|条件|规则|限制|约束)", 2),
+    (r"(格式|用markdown|用表格|用列表|用代码|用json|用yaml)", 2),
+    (r"(分[点步]|列出|列举|逐[条项])", 2),
+    (r"(请.*[:：])", 2),
+    (r"(不要|禁止|避免|注意|务必|必须)", 2),
+    (r"(示例|例子|比如|例如|参考)", 2),
 ]]
 
 STRUCTURE_PATTERNS_EN = [(re.compile(p, re.IGNORECASE), w) for p, w in [
     (r"(step\s*\d|first|then|finally|next)", 3),
     (r"(requirements?|constraints?|rules?|limitations?)", 2),
     (r"(format|markdown|table|bullet\s*points?|json|yaml|code)", 2),
-    (r"(please\s.*[:锛歖)", 2),
+    (r"(please\s.*[:：])", 2),
     (r"(do not|don't|avoid|make sure|ensure|must|should)", 2),
     (r"(example|e\.g\.|for instance|sample)", 2),
 ]]
 
-# 4. 鎻愰棶妯″紡 鈥?鏉冮噸 2锛堥缂栬瘧锛?QUESTION_PATTERNS_CN = [re.compile(p) for p in [
-    r"濡備綍", r"鎬庝箞", r"鎬庢牱", r"涓轰粈涔?,
-    r"浠€涔堟槸", r"浠€涔堝彨", r"鏄粈涔堟剰鎬?,
-    r"鍖哄埆.*鏄粈涔?, r".*鍜?*鐨勫尯鍒?,
-    r"璇峰憡璇塠鎴戞垜浠琞",
-    r"鏈夋病鏈?*鏂规硶", r"鏄惁",
+# 4. 提问模式 — 权重 2（预编译）
+QUESTION_PATTERNS_CN = [re.compile(p) for p in [
+    r"如何", r"怎么", r"怎样", r"为什么",
+    r"什么是", r"什么叫", r"是什么意思",
+    r"区别.*是什么", r".*和.*的区别",
+    r"请告诉[我我们]",
+    r"有没有.*方法", r"是否",
 ]]
 
 QUESTION_PATTERNS_EN = [re.compile(p, re.IGNORECASE) for p in [
@@ -93,11 +101,12 @@ QUESTION_PATTERNS_EN = [re.compile(p, re.IGNORECASE) for p in [
     r"please (tell|explain|show|describe|provide|give)",
 ]]
 
-# 5. 浠ｇ爜鐩稿叧 鈥?鏉冮噸 2锛堥缂栬瘧锛?CODE_PATTERNS_CN = [re.compile(p) for p in [
-    r"(鍐欎唬鐮亅鍐欒剼鏈瑋鍐欑▼搴弢缂栫▼|鑴氭湰|浠ｇ爜)",
+# 5. 代码相关 — 权重 2（预编译）
+CODE_PATTERNS_CN = [re.compile(p) for p in [
+    r"(写代码|写脚本|写程序|编程|脚本|代码)",
     r"(Python|Java|JavaScript|C\+\+|Go|Rust|TypeScript|SQL|HTML|CSS)",
-    r"(瀹炵幇[涓€涓])", r"(鍑芥暟|鏂规硶|绫粅鎺ュ彛|妯″潡)",
-    r"(鐢╘w+璇█)", r"(鐢╘w+瀹炵幇)",
+    r"(实现[一个段])", r"(函数|方法|类|接口|模块)",
+    r"(用\w+语言)", r"(用\w+实现)",
 ]]
 
 CODE_PATTERNS_EN = [re.compile(p, re.IGNORECASE) for p in [
@@ -107,14 +116,15 @@ CODE_PATTERNS_EN = [re.compile(p, re.IGNORECASE) for p in [
     r"(code\s*(snippet|example|sample))",
 ]]
 
-# 鍏朵粬棰勭紪璇戞鍒?_RE_PURE_URL = re.compile(r'^(https?://|ftp://|file://|www\.)[^\s]*$', re.IGNORECASE)
-_RE_COLON_END = re.compile(r'[锛?]\s*$')
-_RE_ROLE_TITLE = re.compile(r'(?:浣犳槸|浣犳槸涓€涓獆浣滀负涓€涓獆鎵紨|鍏呭綋|act as an?|you are an?)\s*(.+?)(?:[锛?銆?\n]|璇穦甯垜|$)', re.IGNORECASE)
-_RE_ROLE_TASK = re.compile(r'(?:璇穦甯垜|甯繖)(.+?)(?:[銆?\n]|$)')
-_RE_CN_ACTION = re.compile(r'(?:甯垜|璇峰府鎴憒璇蜂綘|璇穦甯繖)\s*(鍐檤鐢熸垚|缈昏瘧|鎬荤粨|鍒嗘瀽|瑙ｉ噴|淇敼|浼樺寲|淇|鍒涘缓|璁捐|寮€鍙憒瀹炵幇|鏁寸悊|瑙勫垝|鍒朵綔|璁＄畻|杞崲|姣旇緝|妫€鏌鎺ㄨ崘|鏁??\s*(.+?)(?:[銆?\n锛?]|$)')
+# 其他预编译正则
+_RE_PURE_URL = re.compile(r'^(https?://|ftp://|file://|www\.)[^\s]*$', re.IGNORECASE)
+_RE_COLON_END = re.compile(r'[：:]\s*$')
+_RE_ROLE_TITLE = re.compile(r'(?:你是|你是一个|作为一个|扮演|充当|act as an?|you are an?)\s*(.+?)(?:[，,。.\n]|请|帮我|$)', re.IGNORECASE)
+_RE_ROLE_TASK = re.compile(r'(?:请|帮我|帮忙)(.+?)(?:[。.\n]|$)')
+_RE_CN_ACTION = re.compile(r'(?:帮我|请帮我|请你|请|帮忙)\s*(写|生成|翻译|总结|分析|解释|修改|优化|修复|创建|设计|开发|实现|整理|规划|制作|计算|转换|比较|检查|推荐|教)?\s*(.+?)(?:[。.\n，,]|$)')
 _RE_EN_ACTION = re.compile(r'(write|generate|create|translate|summarize|explain|analyze|implement|fix|optimize|refactor|design|develop|build|convert|compare|review|check|teach|recommend)\s*(?:a|an|the|me|this|some)?\s*(.+?)(?:[\.\n]|$)', re.IGNORECASE)
-_RE_QUESTION = re.compile(r'(濡備綍|鎬庝箞|鎬庢牱|浠€涔堟槸|涓轰粈涔坾鍖哄埆|how to|what is|why|how do|how can)\s*(.+?)(?:[锛?\n]|$)', re.IGNORECASE)
-_RE_CLEAN_START = re.compile(r'^(閭ｄ釜|杩欎釜|鍡瘄棰潀灏辨槸璇磡鎴戞兂|楹荤儲|鑳戒笉鑳絴鍙笉鍙互)\s*')
+_RE_QUESTION = re.compile(r'(如何|怎么|怎样|什么是|为什么|区别|how to|what is|why|how do|how can)\s*(.+?)(?:[？?\n]|$)', re.IGNORECASE)
+_RE_CLEAN_START = re.compile(r'^(那个|这个|嗯|额|就是说|我想|麻烦|能不能|可不可以)\s*')
 _RE_SYMBOLS = re.compile(r'[{}();=<>&\[\]|!]')
 _RE_CODE_INDICATORS = [
     (re.compile(r'^(import|from|require|const|let|var|function|def|class|public|private)\s'), True),
@@ -128,14 +138,16 @@ _RE_CODE_INDICATORS = [
 
 def classify_text(text):
     """
-    瀵规枃鏈唴瀹硅繘琛屽垎绫?
+    对文本内容进行分类
+
     Args:
-        text: 瑕佸垎绫荤殑鏂囨湰
+        text: 要分类的文本
 
     Returns:
-        (category, summary, subcategory) 鍏冪粍
+        (category, summary, subcategory) 元组
         category: 'prompt' | 'other_text'
-        summary: 绠€鐭憳瑕佹弿杩?        subcategory: 瀛愬垎绫?key锛堜粎 prompt 鏈夊€硷級
+        summary: 简短摘要描述
+        subcategory: 子分类 key（仅 prompt 有值）
     """
     if not text or not text.strip():
         return "other_text", "", ""
@@ -143,7 +155,7 @@ def classify_text(text):
     text = text.strip()
     text_lower = text.lower()
 
-    # ---- 璐熷悜淇″彿妫€娴?----
+    # ---- 负向信号检测 ----
     if _is_pure_url(text):
         return "other_text", _make_summary(text, is_url=True), ""
 
@@ -153,10 +165,10 @@ def classify_text(text):
     if _is_trivial(text):
         return "other_text", _make_summary(text), ""
 
-    # ---- 姝ｅ悜淇″彿璇勫垎 ----
+    # ---- 正向信号评分 ----
     score = 0.0
 
-    # 1. 鎸囦护鎬у姩璇嶆娴?(涓婇檺 12 鍒?
+    # 1. 指令性动词检测 (上限 12 分)
     verb_score = 0
     for verb in INSTRUCTION_VERBS_CN:
         if verb in text:
@@ -171,7 +183,7 @@ def classify_text(text):
                     break
     score += verb_score
 
-    # 2. 瑙掕壊瀹氫箟妯″紡妫€娴?(涓婇檺 5 鍒嗭紝鍛戒腑鍗虫弧鍒?
+    # 2. 角色定义模式检测 (上限 5 分，命中即满分)
     for pattern in ROLE_PATTERNS_CN:
         if pattern.search(text):
             score += 5
@@ -182,7 +194,7 @@ def classify_text(text):
                 score += 5
                 break
 
-    # 3. 缁撴瀯鍖栫壒寰佹娴?(涓婇檺 6 鍒?
+    # 3. 结构化特征检测 (上限 6 分)
     struct_score = 0
     for pattern, weight in STRUCTURE_PATTERNS_CN:
         if pattern.search(text):
@@ -197,7 +209,7 @@ def classify_text(text):
                     break
     score += struct_score
 
-    # 4. 鎻愰棶妯″紡妫€娴?(涓婇檺 4 鍒?
+    # 4. 提问模式检测 (上限 4 分)
     q_score = 0
     for pattern in QUESTION_PATTERNS_CN:
         if pattern.search(text):
@@ -212,7 +224,7 @@ def classify_text(text):
                     break
     score += q_score
 
-    # 5. 浠ｇ爜鐩稿叧妫€娴?(涓婇檺 4 鍒?
+    # 5. 代码相关检测 (上限 4 分)
     code_score = 0
     for pattern in CODE_PATTERNS_CN:
         if pattern.search(text):
@@ -227,7 +239,7 @@ def classify_text(text):
                     break
     score += code_score
 
-    # 6. 闀垮害绯绘暟
+    # 6. 长度系数
     text_len = len(text)
     if text_len < 10:
         score *= 0.5
@@ -238,16 +250,16 @@ def classify_text(text):
     else:
         score *= 0.5
 
-    # 7. 棰濆鍔犲垎锛氬琛岀粨鏋勫寲鏂囨湰
+    # 7. 额外加分：多行结构化文本
     line_count = text.count("\n") + 1
     if line_count >= 3 and score >= 3:
-        score += 1  # 澶氳涓旀湁鎸囦护鎬э紝寰堝彲鑳芥槸 prompt
+        score += 1  # 多行且有指令性，很可能是 prompt
 
-    # 8. 鍐掑彿缁撳熬鐨勬寚浠ゅ彞
+    # 8. 冒号结尾的指令句
     if _RE_COLON_END.search(text.strip()):
         score += 1
 
-    # ---- 鍒嗙被鍒ゅ畾 ----
+    # ---- 分类判定 ----
     if score >= 5:
         category = "prompt"
     else:
@@ -255,7 +267,8 @@ def classify_text(text):
 
     summary = _make_summary(text)
 
-    # 瀛愬垎绫绘帹鏂紙浠?prompt锛?    subcategory = ""
+    # 子分类推断（仅 prompt）
+    subcategory = ""
     if category == "prompt":
         subcategory = _infer_prompt_subcategory(text)
 
@@ -263,34 +276,34 @@ def classify_text(text):
 
 
 def _infer_prompt_subcategory(text):
-    """鎺ㄦ柇 prompt 鐨勫瓙鍒嗙被"""
+    """推断 prompt 的子分类"""
     text_lower = text.lower()
-    # 浠ｇ爜鐩稿叧
-    if any(kw in text for kw in ["浠ｇ爜", "鍐欎竴涓?, "鍑芥暟", "鑴氭湰", "bug", "debug", "缂栫▼",
+    # 代码相关
+    if any(kw in text for kw in ["代码", "写一个", "函数", "脚本", "bug", "debug", "编程",
                                    "python", "javascript", "function", "code", "api"]):
-        return "prompt_sub2"  # 榛樿瀛愬垎绫? 鈫?浠ｇ爜
-    # 鍐欎綔鐩稿叧
-    if any(kw in text for kw in ["鍐欎竴绡?, "鍐欎竴娈?, "鏂囩珷", "缈昏瘧", "鎬荤粨", "姒傛嫭", "鏀瑰啓",
+        return "prompt_sub2"  # 默认子分类2 → 代码
+    # 写作相关
+    if any(kw in text for kw in ["写一篇", "写一段", "文章", "翻译", "总结", "概括", "改写",
                                    "translate", "summarize", "write", "article"]):
-        return "prompt_sub3"  # 榛樿瀛愬垎绫? 鈫?鍐欎綔
-    # 閫氱敤
-    return "prompt_sub1"  # 榛樿瀛愬垎绫? 鈫?閫氱敤
+        return "prompt_sub3"  # 默认子分类3 → 写作
+    # 通用
+    return "prompt_sub1"  # 默认子分类1 → 通用
 
 
 def _is_pure_url(text):
-    """妫€鏌ユ槸鍚︿负绾?URL"""
+    """检查是否为纯 URL"""
     return bool(_RE_PURE_URL.match(text.strip()))
 
 
 def _is_pure_code(text):
-    """妫€鏌ユ槸鍚︿负绾唬鐮侊紙鏃犺嚜鐒惰瑷€鎴愬垎锛?""
+    """检查是否为纯代码（无自然语言成分）"""
     stripped = text.strip()
     for pattern, _ in _RE_CODE_INDICATORS:
         if pattern.search(stripped):
             if len(_RE_SYMBOLS.findall(text)) > 3:
                 return True
 
-    # 绗﹀彿瀵嗗害杩囬珮
+    # 符号密度过高
     symbols = len(_RE_SYMBOLS.findall(text))
     total_chars = len(text)
     if total_chars > 10 and symbols / total_chars > 0.15:
@@ -300,24 +313,26 @@ def _is_pure_code(text):
 
 
 def _is_trivial(text):
-    """妫€鏌ユ槸鍚︿负绠€鍗?鐞愮鏂囨湰"""
+    """检查是否为简单/琐碎文本"""
     text_stripped = text.strip()
 
-    # 绾暟瀛?    if re.match(r'^[\d\s\-+.,]+$', text_stripped) and len(text_stripped) < 30:
+    # 纯数字
+    if re.match(r'^[\d\s\-+.,]+$', text_stripped) and len(text_stripped) < 30:
         return True
 
-    # 鍗曚釜鍗曡瘝
+    # 单个单词
     if len(text_stripped.split()) == 1 and len(text_stripped) < 20:
         return True
 
-    # 绾壒娈婂瓧绗?    if re.match(r'^[^\w\s]+$', text_stripped):
+    # 纯特殊字符
+    if re.match(r'^[^\w\s]+$', text_stripped):
         return True
 
     return False
 
 
 def _make_summary(text, is_url=False):
-    """涓烘墍鏈夋枃鏈被鍨嬬敓鎴愭憳瑕?""
+    """为所有文本类型生成摘要"""
     if not text:
         return ""
     text = text.strip()
@@ -326,38 +341,38 @@ def _make_summary(text, is_url=False):
         match = _RE_PURE_URL.search(text)
         if match:
             domain = match.group(0).replace("https://", "").replace("http://", "").replace("www.", "").split("/")[0]
-            return f"閾炬帴: {domain}"
-        return "閾炬帴"
+            return f"链接: {domain}"
+        return "链接"
 
     return _make_title(text)
 
 
 def _make_title(text):
-    """涓烘枃鏈敓鎴愮畝鐭爣棰橈紙10-30瀛楃锛夛紝鎻愮偧鏍稿績鎰忓浘"""
+    """为文本生成简短标题（10-30字符），提炼核心意图"""
     if not text:
         return ""
 
     text = text.strip()
     first_line = text.split("\n")[0].strip()
 
-    # ---- 妯″紡1: 瑙掕壊瀹氫箟 鈫?"瑙掕壊: 浠诲姟" ----
+    # ---- 模式1: 角色定义 → "角色: 任务" ----
     role_match = _RE_ROLE_TITLE.search(text)
     if role_match:
         role = role_match.group(1).strip()
         task_match = _RE_ROLE_TASK.search(text)
         task = task_match.group(1).strip()[:12] if task_match else ""
         if task:
-            return f"{_shorten(role, 10)}锛歿_shorten(task, 12)}"
+            return f"{_shorten(role, 10)}：{_shorten(task, 12)}"
         return _shorten(role, 22)
 
-    # ---- 妯″紡2: "甯垜/璇?+ 鍔ㄨ瘝 + 瀹捐" ----
+    # ---- 模式2: "帮我/请 + 动词 + 宾语" ----
     action_match = _RE_CN_ACTION.search(text)
     if action_match:
         verb = action_match.group(1) or ""
         obj = action_match.group(2).strip()
         return _shorten(f"{verb}{obj}", 24)
 
-    # ---- 妯″紡3: 鑻辨枃鎸囦护鍔ㄨ瘝 ----
+    # ---- 模式3: 英文指令动词 ----
     en_action = _RE_EN_ACTION.search(first_line)
     if en_action:
         verb = en_action.group(1).strip()
@@ -365,25 +380,25 @@ def _make_title(text):
         result = f"{verb} {obj}".strip()
         return _shorten(result, 26)
 
-    # ---- 妯″紡4: 闂绫?鈫?鎻愬彇涓婚 ----
+    # ---- 模式4: 问题类 → 提取主题 ----
     question = _RE_QUESTION.search(first_line)
     if question:
         topic = (question.group(2) or "").strip()
         qword = question.group(1).strip()
         return _shorten(f"{qword}{topic}", 22)
 
-    # ---- 妯″紡5: 缁撴瀯鍖栭暱鏂囨湰 鈫?鍙栫涓€鍙ョ殑涓诲共 ----
+    # ---- 模式5: 结构化长文本 → 取第一句的主干 ----
     if len(text) > 60:
         cleaned = _RE_CLEAN_START.sub('', first_line)
         return _shorten(cleaned, 24)
 
-    # ---- 閫氱敤: 娓呯悊鍚庡彇鍓?0瀛?----
+    # ---- 通用: 清理后取前20字 ----
     cleaned = re.sub(r'\s+', ' ', first_line).strip()
     return _shorten(cleaned, 22)
 
 
 def _shorten(s, max_len):
-    """鎴柇鏂囨湰锛岀‘淇濆湪 max_len 浠ュ唴"""
+    """截断文本，确保在 max_len 以内"""
     if len(s) <= max_len:
         return s
-    return s[:max_len-2] + "鈥?
+    return s[:max_len-2] + "…"
