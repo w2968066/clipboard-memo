@@ -1,4 +1,4 @@
-"""璁剧疆绐楀彛妯″潡"""
+"""设置窗口模块"""
 import tkinter as tk
 from tkinter import ttk, messagebox
 from config import get_config, load_config, save_config
@@ -18,7 +18,7 @@ class SettingsWindow:
         self.window.resizable(True, True)
         self.window.minsize(420, 400)
 
-        # 鍙粴鍔ㄥ唴瀹瑰尯
+        # 可滚动内容区
         canvas = tk.Canvas(self.window, bg="#1c1c1c", highlightthickness=0)
         scrollbar = tk.Scrollbar(self.window, orient=tk.VERTICAL, command=canvas.yview)
         self._content = tk.Frame(canvas, bg="#1c1c1c")
@@ -107,7 +107,7 @@ class SettingsWindow:
         sec.pack(fill=tk.X, padx=20, pady=(0, 16))
 
         self._lang_var = tk.StringVar(value=self.lang)
-        for val, label in [("zh", "涓枃"), ("en", "English")]:
+        for val, label in [("zh", "中文"), ("en", "English")]:
             tk.Radiobutton(sec, text=label, variable=self._lang_var, value=val,
                            bg="#1c1c1c", fg="#ffffff", selectcolor="#444444",
                            font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=(0, 24))
