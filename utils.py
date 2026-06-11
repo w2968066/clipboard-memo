@@ -1,5 +1,5 @@
 """
-宸ュ叿鍑芥暟妯″潡
+工具函数模块
 """
 
 import hashlib
@@ -11,17 +11,17 @@ from functools import lru_cache
 
 
 def compute_hash(text):
-    """璁＄畻鏂囨湰鐨?MD5 鍝堝笇"""
+    """计算文本的 MD5 哈希"""
     return hashlib.md5(text.encode("utf-8", errors="ignore")).hexdigest()
 
 
 def compute_image_hash(image_bytes):
-    """璁＄畻鍥剧墖鏁版嵁鐨?MD5 鍝堝笇"""
+    """计算图片数据的 MD5 哈希"""
     return hashlib.md5(image_bytes).hexdigest()
 
 
 def generate_image_filename():
-    """鐢熸垚鍞竴鐨勫浘鐗囨枃浠跺悕"""
+    """生成唯一的图片文件名"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     uid = str(uuid.uuid4())[:8]
     return f"clip_{timestamp}_{uid}.png"
@@ -29,7 +29,7 @@ def generate_image_filename():
 
 @lru_cache(maxsize=512)
 def _parse_time(timestamp_str):
-    """缂撳瓨鏃堕棿瑙ｆ瀽缁撴灉"""
+    """缓存时间解析结果"""
     for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"]:
         try:
             return datetime.strptime(timestamp_str, fmt)
@@ -39,7 +39,7 @@ def _parse_time(timestamp_str):
 
 
 def format_time(timestamp_str):
-    """鏍煎紡鍖栨椂闂存埑涓虹畝鐭樉绀烘牸寮?""
+    """格式化时间戳为简短显示格式"""
     if not timestamp_str:
         return ""
     try:
@@ -52,15 +52,15 @@ def format_time(timestamp_str):
 
         if diff.days == 0:
             if diff.seconds < 60:
-                return "鍒氬垰"
+                return "刚刚"
             elif diff.seconds < 3600:
-                return f"{diff.seconds // 60}鍒嗛挓鍓?
+                return f"{diff.seconds // 60}分钟前"
             else:
-                return f"{diff.seconds // 3600}灏忔椂鍓?
+                return f"{diff.seconds // 3600}小时前"
         elif diff.days == 1:
-            return "鏄ㄥぉ " + dt.strftime("%H:%M")
+            return "昨天 " + dt.strftime("%H:%M")
         elif diff.days < 7:
-            return f"{diff.days}澶╁墠"
+            return f"{diff.days}天前"
         else:
             return dt.strftime("%m/%d %H:%M")
     except Exception:
@@ -68,7 +68,7 @@ def format_time(timestamp_str):
 
 
 def truncate_text(text, max_len=50):
-    """鎴柇鏂囨湰鍒版寚瀹氶暱搴?""
+    """截断文本到指定长度"""
     if not text:
         return ""
     text = text.replace("\n", " ").replace("\r", " ").strip()
@@ -78,7 +78,7 @@ def truncate_text(text, max_len=50):
 
 
 def is_url(text):
-    """鍒ゆ柇鏂囨湰鏄惁涓虹函 URL"""
+    """判断文本是否为纯 URL"""
     text = text.strip()
     url_pattern = re.compile(
         r'^(https?://|ftp://|file://|www\.)[^\s]*$',
@@ -88,24 +88,24 @@ def is_url(text):
 
 
 def get_display_icon(category, is_favorite=False):
-    """鑾峰彇鍒嗙被瀵瑰簲鐨勬樉绀烘爣璁帮紙绾枃瀛楋紝鏃?emoji锛?""
+    """获取分类对应的显示标记（纯文字，无 emoji）"""
     if is_favorite:
-        return "[鏀惰棌]"
+        return "[收藏]"
     icons = {
-        "prompt": "[鎻愮ず璇峕",
-        "image": "[鍥剧墖]",
-        "other_text": "[鏂囨湰]",
-        "favorite": "[鏀惰棌]"
+        "prompt": "[提示词]",
+        "image": "[图片]",
+        "other_text": "[文本]",
+        "favorite": "[收藏]"
     }
-    return icons.get(category, "[鏂囨湰]")
+    return icons.get(category, "[文本]")
 
 
 def get_category_name(category):
-    """鑾峰彇鍒嗙被鐨勪腑鏂囧悕绉?""
+    """获取分类的中文名称"""
     names = {
-        "prompt": "鎻愮ず璇?,
-        "image": "鍥剧墖",
-        "other_text": "鍏朵粬鏂囨湰",
-        "favorite": "甯哥敤"
+        "prompt": "提示词",
+        "image": "图片",
+        "other_text": "其他文本",
+        "favorite": "常用"
     }
     return names.get(category, category)
