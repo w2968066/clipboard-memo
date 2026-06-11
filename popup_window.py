@@ -1,5 +1,5 @@
 """
-寮瑰嚭娴獥 UI 鈥?涓荤晫闈?+ 娓呯悊绐楀彛
+弹出浮窗 UI — 主界面 + 清理窗口
 """
 
 import tkinter as tk
@@ -21,17 +21,17 @@ from settings_window import SettingsWindow
 # ============================================================
 
 class PopupWindow:
-    """鍓创鏉垮脊鍑烘诞绐楋紙甯﹀閲忓埛鏂?+ 缂╃暐鍥?LRU锛?""
+    """剪贴板弹出浮窗（带增量刷新 + 缩略图 LRU）"""
 
-    # 甯搁噺
+    # 常量
     THUMB_SIZE = 36
-    THUMB_CACHE_MAX = 100  # LRU 缂撳瓨涓婇檺
+    THUMB_CACHE_MAX = 100  # LRU 缓存上限
 
     def __init__(self):
         self.storage = get_storage()
         self.window = None
         self._current_tab = "recent"
-        self._current_subcategory = None  # 瀛愬垎绫?key
+        self._current_subcategory = None  # 子分类 key
         self._search_text = ""
         self._hovered_item_id = None
         self._selected_index = -1
@@ -39,15 +39,16 @@ class PopupWindow:
         self._visible = False
         self._quick_categorize_mode = False
         self._dirty = True
-        self._thumbnails = OrderedDict()  # LRU 缂撳瓨: path -> PhotoImage
-        self._last_sig = None     # 鏁版嵁绛惧悕锛岀敤浜庤烦杩囨棤鍙樺寲鍒锋柊
+        self._thumbnails = OrderedDict()  # LRU 缓存: path -> PhotoImage
+        self._last_sig = None     # 数据签名，用于跳过无变化刷新
         self._force_refresh = False
 
     def mark_dirty(self):
-        """鏍囪鏁版嵁宸插彉鍖?""
+        """标记数据已变化"""
         self._dirty = True
         self._last_sig = None
-        # 濡傛灉绐楀彛鍙涓斿湪 recent tab 涓旀棤鎼滅储锛屽皾璇曞閲忔彃鍏?        if self._visible and self._current_tab == "recent" and not self._search_text:
+        # 如果窗口可见且在 recent tab 且无搜索，尝试增量插入
+        if self._visible and self._current_tab == "recent" and not self._search_text:
             if self.window and self.window.winfo_exists():
                 try:
                     self.window.after(50, self._try_incremental_insert)
@@ -55,7 +56,7 @@ class PopupWindow:
                     pass
 
     def _try_incremental_insert(self):
-        """灏濊瘯鍦ㄩ《閮ㄦ彃鍏ユ渶鏂版潯鐩紝閬垮厤鍏ㄩ噺閲嶅缓"""
+        """尝试在顶部插入最新条目，避免全量重建"""
         if not self._visible or self._current_tab != "recent" or self._search_text:
             return
         try:
@@ -63,31 +64,32 @@ class PopupWindow:
             if not items:
                 return
             top_item = items[0]
-            # 妫€鏌ユ槸鍚﹀凡缁忓湪鍒楄〃涓?            if self._item_widgets and self._item_widgets[0][1]["id"] == top_item["id"]:
+            # 检查是否已经在列表中
+            if self._item_widgets and self._item_widgets[0][1]["id"] == top_item["id"]:
                 return
-            # 鍚屾鏇存柊缂撳瓨鏁版嵁
+            # 同步更新缓存数据
             if hasattr(self, '_all_items'):
                 self._all_items.insert(0, top_item)
                 self._last_sig = tuple(i["id"] for i in self._all_items[:200])
-            # 鍒涘缓鏂?widget 骞舵彃鍏ュ埌椤堕儴
+            # 创建新 widget 并插入到顶部
             self._create_item_widget(top_item, insert_at_top=True)
             self._rendered_count += 1
-            # 鏇存柊璁℃暟
+            # 更新计数
             total = self.storage.get_item_count(tab="recent")
             self._count_label.config(text=f"{total} items")
-            # 闄愬埗鏄剧ず鏁伴噺锛岃秴鍑烘椂绉婚櫎搴曢儴 widget
+            # 限制显示数量，超出时移除底部 widget
             limit = 200
             while len(self._item_widgets) > limit:
                 self._remove_item_widget(-1)
                 self._rendered_count -= 1
             self._selected_index = -1
         except Exception as e:
-            print(f"[Popup] 澧為噺鎻掑叆澶辫触锛屽洖閫€鍒板叏閲忓埛鏂? {e}")
+            print(f"[Popup] 增量插入失败，回退到全量刷新: {e}")
             self._force_refresh = True
             self._refresh_items()
 
     def _remove_item_widget(self, index):
-        """绉婚櫎鎸囧畾绱㈠紩鐨?widget"""
+        """移除指定索引的 widget"""
         if 0 <= index < len(self._item_widgets):
             frame, item, hoverables = self._item_widgets.pop(index)
             try:
@@ -143,18 +145,18 @@ class PopupWindow:
             self.window.focus_force()
             self._focus_search()
 
-    # ========== 绐楀彛鍒涘缓 ==========
+    # ========== 窗口创建 ==========
 
     def _create_window(self):
         if self.window:
             return
 
         self.window = tk.Toplevel()
-        self.window.title("鍓创鏉垮蹇樺綍")
+        self.window.title("剪贴板备忘录")
         self.window.overrideredirect(True)
         self.window.attributes("-topmost", True)
 
-        # taste-skill 鏆栨殫鑹茬郴
+        # taste-skill 暖暗色系
         self._bg = "#1c1c1c"
         self._fg = "#ffffff"
         self._accent = "#7eb8ff"
@@ -169,14 +171,15 @@ class PopupWindow:
 
         self.window.configure(bg=self._bg)
 
-        # 澶栬竟妗?        container = tk.Frame(self.window, bg=self._border, bd=0,
+        # 外边框
+        container = tk.Frame(self.window, bg=self._border, bd=0,
                              highlightthickness=1, highlightbackground=self._border)
         container.pack(fill=tk.BOTH, expand=True)
 
         inner = tk.Frame(container, bg=self._bg, bd=0)
         inner.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
 
-        # ---- 鎼滅储鏍?----
+        # ---- 搜索栏 ----
         sf = tk.Frame(inner, bg=self._search_bg)
         sf.pack(fill=tk.X)
 
@@ -197,7 +200,7 @@ class PopupWindow:
         close_btn.pack(side=tk.RIGHT, padx=(0, 10), pady=8)
         close_btn.bind("<Button-1>", lambda e: self.hide())
 
-        # ---- 涓绘爣绛?----
+        # ---- 主标签 ----
         self._tab_frame = tk.Frame(inner, bg=self._bg)
         self._tab_frame.pack(fill=tk.X, padx=8, pady=(6, 2))
 
@@ -222,11 +225,11 @@ class PopupWindow:
                                  bg=self._tag_active_bg if self._current_tab == k else self._tag_bg))
             self._tabs[cat_key] = lbl
 
-        # ---- 瀛愭爣绛惧鍣紙prompt/image 鏃舵樉绀猴級 ----
+        # ---- 子标签容器（prompt/image 时显示） ----
         self._sub_tab_frame = tk.Frame(inner, bg=self._bg)
         self._sub_tabs = {}
 
-        # ---- 鍒楄〃鍖哄煙 ----
+        # ---- 列表区域 ----
         lc = tk.Frame(inner, bg=self._bg)
         lc.pack(fill=tk.BOTH, expand=True, padx=4, pady=(2, 0))
 
@@ -238,17 +241,17 @@ class PopupWindow:
         self._items_frame = tk.Frame(self._canvas, bg=self._bg)
         self._canvas_id = self._canvas.create_window((0, 0), window=self._items_frame, anchor="nw")
 
-        # Canvas 澶у皬鍙樺寲 鈫?items_frame 瀹藉害鍚屾
+        # Canvas 大小变化 → items_frame 宽度同步
         def _on_canvas_conf(event):
             self._canvas.itemconfig(self._canvas_id, width=event.width)
         self._canvas.bind("<Configure>", _on_canvas_conf)
 
-        # items_frame 澶у皬鍙樺寲 鈫?鏇存柊婊氬姩鍖哄煙
+        # items_frame 大小变化 → 更新滚动区域
         def _on_items_conf(event):
             self._canvas.configure(scrollregion=self._canvas.bbox("all"))
         self._items_frame.bind("<Configure>", _on_items_conf)
 
-        # 榧犳爣婊氳疆 鈥?缁熶竴鍦ㄩ《灞?window 澶勭悊
+        # 鼠标滚轮 — 统一在顶层 window 处理
         def _wheel(event):
             self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
             self.window.after(80, self._check_scroll_bottom)
@@ -257,7 +260,7 @@ class PopupWindow:
         self._canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self._scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # ---- 搴曢儴鏍?----
+        # ---- 底部栏 ----
         bf = tk.Frame(inner, bg=self._bg)
         bf.pack(fill=tk.X, padx=8, pady=(4, 6))
 
@@ -265,7 +268,8 @@ class PopupWindow:
                                      fg=self._subtle, font=("Segoe UI", 9))
         self._count_label.pack(side=tk.LEFT)
 
-        # 宸插垹闄?tab 鐨勬竻绌烘寜閽?        self._clear_deleted_btn = tk.Label(bf, text="", bg=self._bg, fg="#e05555",
+        # 已删除 tab 的清空按钮
+        self._clear_deleted_btn = tk.Label(bf, text="", bg=self._bg, fg="#e05555",
                                            font=("Segoe UI", 9), cursor="hand2")
         self._clear_deleted_btn.bind("<Button-1>", lambda e: self._clear_deleted())
         self._clear_deleted_btn.bind("<Enter>", lambda e: self._clear_deleted_btn.configure(fg="#ff6666"))
@@ -292,12 +296,13 @@ class PopupWindow:
         settings_btn.bind("<Enter>", lambda e: settings_btn.configure(fg=self._fg))
         settings_btn.bind("<Leave>", lambda e: settings_btn.configure(fg=self._muted))
 
-        # ---- 鍙充笅瑙掔缉鏀炬墜鏌勶紙taste-skill: subtle diagonal lines锛?----
+        # ---- 右下角缩放手柄（taste-skill: subtle diagonal lines） ----
         grip_size = 14
         self._grip = tk.Canvas(inner, bg=self._bg, highlightthickness=0,
                                width=grip_size, height=grip_size, cursor="bottom_right_corner")
         self._grip.place(relx=1.0, rely=1.0, x=-grip_size-4, y=-grip_size-4, anchor="nw")
-        # 鐢讳笁鏉″瑙掔嚎锛堟瀬 subtle锛?        for i in range(3):
+        # 画三条对角线（极 subtle）
+        for i in range(3):
             x = grip_size - 3 - i * 5
             self._grip.create_line(x, grip_size-2, grip_size-2, x,
                                    fill="#444444", width=1)
@@ -306,7 +311,7 @@ class PopupWindow:
         self._grip.bind("<Button-1>", self._resize_start)
         self._grip.bind("<B1-Motion>", self._resize_drag)
 
-        # ---- 閿洏 ----
+        # ---- 键盘 ----
         self.window.bind("<Escape>", lambda e: self.hide())
         self.window.bind("<Up>", lambda e: self._navigate(-1))
         self.window.bind("<Down>", lambda e: self._navigate(1))
@@ -326,7 +331,7 @@ class PopupWindow:
         self.search_entry.bind("<FocusIn>", self._on_search_focus_in)
         self.search_entry.bind("<FocusOut>", self._on_search_focus_out)
 
-    # ========== 瀹氫綅 ==========
+    # ========== 定位 ==========
 
     def _position_at_center(self):
         if not self.window:
@@ -380,7 +385,7 @@ class PopupWindow:
 
         self.window.geometry(f"+{x}+{y}")
 
-    # ========== Tab 鍒囨崲 ==========
+    # ========== Tab 切换 ==========
 
     def _switch_tab(self, tab):
         self._current_tab = tab
@@ -414,7 +419,7 @@ class PopupWindow:
 
         self._sub_tab_frame.pack(fill=tk.X, padx=8, pady=(2, 4), before=self._canvas.master)
 
-        # "鍏ㄩ儴" 鎸夐挳
+        # "全部" 按钮
         all_key = None
         all_lbl = tk.Label(self._sub_tab_frame, text=t("sub_all"),
                            bg=self._tag_bg, fg="#999999",
@@ -424,7 +429,8 @@ class PopupWindow:
         all_lbl.bind("<Enter>", lambda e, w=all_lbl: w.configure(fg=self._fg, bg="#303030"))
         self._sub_tabs[None] = all_lbl
 
-        # 瀛愬垎绫?1-4锛堝墠闈㈠姞鏁板瓧锛?        for i in range(1, 5):
+        # 子分类 1-4（前面加数字）
+        for i in range(1, 5):
             sc_key = f"{self._current_tab}_sub{i}"
             name = get_subcategory_name(sc_key)
             lbl = tk.Label(self._sub_tab_frame, text=f"{i}{name}",
@@ -444,13 +450,13 @@ class PopupWindow:
             else:
                 lbl.configure(bg=self._tag_bg, fg="#999999")
 
-    # ========== 鍒楄〃鍒锋柊 ==========
+    # ========== 列表刷新 ==========
 
     def _refresh_items(self):
         self._dirty = False
         self._force_refresh = False
 
-        # 鑾峰彇鏁版嵁
+        # 获取数据
         tab = self._current_tab
         category = None
         subcategory = None
@@ -468,7 +474,8 @@ class PopupWindow:
             search=search, limit=200, tab=tab
         )
 
-        # 鏁版嵁绛惧悕妫€鏌ワ細濡傛灉鏁版嵁娌″彉锛岃烦杩囬噸寤?        sig = tuple(i["id"] for i in items)
+        # 数据签名检查：如果数据没变，跳过重建
+        sig = tuple(i["id"] for i in items)
         if self._last_sig == sig and self._item_widgets:
             self._update_footer(len(items), tab)
             return
@@ -476,7 +483,7 @@ class PopupWindow:
         self._all_items = items
         self._rendered_count = 0
 
-        # 娓呴櫎鏃?widget
+        # 清除旧 widget
         for w in self._items_frame.winfo_children():
             w.destroy()
         self._item_widgets = []
@@ -492,11 +499,12 @@ class PopupWindow:
             return
 
         self._selected_index = -1
-        # 鍒嗘壒娓叉煋锛氬厛娓叉煋鍓?30 鏉★紝婊氬姩鏃跺姞杞芥洿澶?        self._render_batch(30)
+        # 分批渲染：先渲染前 30 条，滚动时加载更多
+        self._render_batch(30)
         self._canvas.yview_moveto(0)
 
     def _render_batch(self, count):
-        """娓叉煋涓嬩竴鎵规潯鐩?""
+        """渲染下一批条目"""
         if not self._all_items:
             return
         start = self._rendered_count
@@ -508,7 +516,7 @@ class PopupWindow:
         self._canvas.configure(scrollregion=self._canvas.bbox("all"))
 
     def _check_scroll_bottom(self):
-        """妫€鏌ユ槸鍚︽粴鍔ㄥ埌搴曢儴锛岄渶瑕佸姞杞芥洿澶?""
+        """检查是否滚动到底部，需要加载更多"""
         if not hasattr(self, '_all_items') or self._rendered_count >= len(self._all_items):
             return
         y1 = self._canvas.canvasy(0)
@@ -518,8 +526,8 @@ class PopupWindow:
             self._render_batch(20)
 
     def _update_footer(self, filtered_count, tab):
-        """鏇存柊搴曢儴璁℃暟鍜屾寜閽?""
-        # recent 涓旀棤鎼滅储/瀛愬垎绫绘椂鎵嶆煡鎬绘暟
+        """更新底部计数和按钮"""
+        # recent 且无搜索/子分类时才查总数
         if tab == "recent" and not self._search_text and not self._current_subcategory:
             total = self.storage.get_item_count(tab="recent")
             self._count_label.config(text=f"{total} items")
@@ -540,7 +548,8 @@ class PopupWindow:
         preview = summary if summary else truncate_text(text_content, 40)
         time_str = format_time(created_at)
 
-        # 涓诲鍣?frame锛堝噺灏戝祵濂楀眰绾э紝鎻愬崌娓叉煋閫熷害锛?        frame = tk.Frame(self._items_frame, bg=self._bg, cursor="hand2")
+        # 主容器 frame（减少嵌套层级，提升渲染速度）
+        frame = tk.Frame(self._items_frame, bg=self._bg, cursor="hand2")
         if insert_at_top and self._item_widgets:
             first_frame = self._item_widgets[0][0]
             frame.pack(fill=tk.X, padx=6, pady=(1, 0), before=first_frame)
@@ -549,7 +558,7 @@ class PopupWindow:
 
         hoverables = [frame]
 
-        # 鍥剧墖缂╃暐鍥撅紙鐩存帴鏀惧湪 frame 閲岋級
+        # 图片缩略图（直接放在 frame 里）
         thumb_lbl = None
         if content_type == "image" and image_path and os.path.exists(image_path):
             try:
@@ -562,7 +571,7 @@ class PopupWindow:
             except Exception:
                 pass
 
-        # ---- 鍙充晶鎿嶄綔鎸夐挳锛堝厛 pack 淇濊瘉鍙冲榻愶級 ----
+        # ---- 右侧操作按钮（先 pack 保证右对齐） ----
         right_frame = tk.Frame(frame, bg=self._bg)
         right_frame.pack(side=tk.RIGHT, padx=(0, 6), pady=8)
         hoverables.append(right_frame)
@@ -574,16 +583,16 @@ class PopupWindow:
             restore_btn.bind("<Button-1>", lambda e, iid=item_id: self._restore_item(iid))
             hoverables.append(restore_btn)
         else:
-            # 馃摉 鍒嗙被鐘舵€佹爣璇嗭紙taste-skill: 宸插垎绫绘垨宸叉敹钘忔椂 accent 鑹诧紝鏈垎绫绘殫娣★級
+            # 📖 分类状态标识（taste-skill: 已分类或已收藏时 accent 色，未分类暗淡）
             cat_fg = self._accent if (category != "other_text" or is_favorite) else "#555555"
-            cat_lbl = tk.Label(right_frame, text="馃摉", bg=self._bg,
+            cat_lbl = tk.Label(right_frame, text="📖", bg=self._bg,
                                fg=cat_fg, font=("Segoe UI", 10))
             cat_lbl.pack(side=tk.RIGHT, padx=(8, 0))
             hoverables.append(cat_lbl)
             frame._cat_lbl = cat_lbl
 
-            # 猸愶笍/鈽?鏀惰棌鏍囪瘑
-            pin_text = "猸愶笍" if is_favorite else "鈽?
+            # ⭐️/☆ 收藏标识
+            pin_text = "⭐️" if is_favorite else "☆"
             pin_fg = "#f0c040" if is_favorite else "#555555"
             pin_lbl = tk.Label(right_frame, text=pin_text, bg=self._bg,
                                fg=pin_fg, font=("Segoe UI", 12))
@@ -592,8 +601,8 @@ class PopupWindow:
             hoverables.append(pin_lbl)
             frame._pin_lbl = pin_lbl
 
-            # [缂栬緫] 鏍囬鎸夐挳
-            edit_lbl = tk.Label(right_frame, text="[缂栬緫]", bg=self._bg,
+            # [编辑] 标题按钮
+            edit_lbl = tk.Label(right_frame, text="[编辑]", bg=self._bg,
                                 fg="#555555", font=("Segoe UI", 8), cursor="hand2")
             edit_lbl.pack(side=tk.RIGHT, padx=(2, 0))
             edit_lbl.bind("<Button-1>", lambda e, iid=item_id, f=frame: self._inline_edit(iid, f))
@@ -602,7 +611,7 @@ class PopupWindow:
             hoverables.append(edit_lbl)
             frame._edit_lbl = edit_lbl
 
-        # ---- 涓诲唴瀹瑰尯 ----
+        # ---- 主内容区 ----
         content_frame = tk.Frame(frame, bg=self._bg)
         content_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8, pady=7)
         hoverables.append(content_frame)
@@ -618,10 +627,12 @@ class PopupWindow:
         time_lbl.pack(fill=tk.X, pady=(1, 0))
         hoverables.append(time_lbl)
 
-        # 瀛樺紩鐢ㄧ粰鍐呰仈缂栬緫鐢?        content_frame._data = {"preview_lbl": preview_lbl, "item": item,
+        # 存引用给内联编辑用
+        content_frame._data = {"preview_lbl": preview_lbl, "item": item,
                                 "preview": preview, "time_str": time_str}
 
-        # 浜嬩欢缁戝畾锛坒rame + 鍐呭鍖哄瓙缁勪欢锛屼笉鍖呮嫭鍙充晶鎿嶄綔鎸夐挳锛?        handlers = [
+        # 事件绑定（frame + 内容区子组件，不包括右侧操作按钮）
+        handlers = [
             ("<Enter>", lambda e, iid=item_id, hov=hoverables: self._on_item_enter(iid, hov)),
             ("<Leave>", lambda e, hov=hoverables: self._on_item_leave(hov)),
             ("<Button-1>", lambda e, iid=item_id: self._paste_item(iid)),
@@ -641,9 +652,9 @@ class PopupWindow:
             self._item_widgets.append((frame, item, hoverables))
 
     def _get_thumbnail(self, image_path):
-        """鑾峰彇缂╃暐鍥撅紙甯?LRU 缂撳瓨锛?""
+        """获取缩略图（带 LRU 缓存）"""
         if image_path in self._thumbnails:
-            # 绉诲姩鍒版湯灏撅紙鏈€杩戜娇鐢級
+            # 移动到末尾（最近使用）
             self._thumbnails.move_to_end(image_path)
             return self._thumbnails[image_path]
         try:
@@ -651,13 +662,14 @@ class PopupWindow:
             img.thumbnail((self.THUMB_SIZE, self.THUMB_SIZE), PILImage.Resampling.LANCZOS)
             photo = ImageTk.PhotoImage(img)
             self._thumbnails[image_path] = photo
-            # 娣樻卑鏃х紦瀛?            while len(self._thumbnails) > self.THUMB_CACHE_MAX:
+            # 淘汰旧缓存
+            while len(self._thumbnails) > self.THUMB_CACHE_MAX:
                 self._thumbnails.popitem(last=False)
             return photo
         except Exception:
             return None
 
-    # ========== 浜や簰 ==========
+    # ========== 交互 ==========
 
     def _on_item_enter(self, item_id, hoverables):
         self._hovered_item_id = item_id
@@ -697,7 +709,7 @@ class PopupWindow:
     def _navigate(self, direction):
         if not self._item_widgets:
             return
-        # 娓呴櫎鏃ч€変腑
+        # 清除旧选中
         if 0 <= self._selected_index < len(self._item_widgets):
             _, _, hoverables = self._item_widgets[self._selected_index]
             for w in hoverables:
@@ -716,7 +728,8 @@ class PopupWindow:
             except Exception:
                 pass
 
-        # 婊氬姩鍒板彲瑙?        fy = frame.winfo_y()
+        # 滚动到可见
+        fy = frame.winfo_y()
         cy = self._canvas.canvasy(0)
         fh = frame.winfo_height()
         ch = self._canvas.winfo_height()
@@ -726,7 +739,7 @@ class PopupWindow:
             self._canvas.yview_moveto((fy + fh - ch) / self._items_frame.winfo_height())
 
     def _update_item_status(self, item_id):
-        """鍙洿鏂版寚瀹氭潯鐩殑鐘舵€佹爣璇嗭紙鏀惰棌猸愶笍 + 鍒嗙被馃摉锛夛紝閬垮厤鍏ㄩ噺鍒锋柊"""
+        """只更新指定条目的状态标识（收藏⭐️ + 分类📖），避免全量刷新"""
         for idx, (frame, item, hoverables) in enumerate(self._item_widgets):
             if item["id"] == item_id:
                 new_item = self.storage.get_item_by_id(item_id)
@@ -744,13 +757,13 @@ class PopupWindow:
                     cat_lbl.config(fg=self._accent if (category != "other_text" or is_favorite) else "#555555")
 
                 if pin_lbl:
-                    pin_lbl.config(text="猸愶笍" if is_favorite else "鈽?,
+                    pin_lbl.config(text="⭐️" if is_favorite else "☆",
                                    fg="#f0c040" if is_favorite else "#555555")
                 return
 
     def _toggle_favorite(self, item_id):
         self.storage.toggle_favorite(item_id)
-        # 濡傛灉鍦ㄦ敹钘?tab 鍙栨秷鏀惰棌锛屾潯鐩渶瑕佹秷澶憋紝鍏ㄩ噺鍒锋柊
+        # 如果在收藏 tab 取消收藏，条目需要消失，全量刷新
         item = self.storage.get_item_by_id(item_id)
         if item and self._current_tab == "favorite" and not item.get("is_favorite"):
             self._force_refresh = True
@@ -770,7 +783,7 @@ class PopupWindow:
             self._force_refresh = True
             self._refresh_items()
 
-    # ========== 蹇€熷垎绫?==========
+    # ========== 快速分类 ==========
 
     def _toggle_quick_categorize(self):
         self._quick_categorize_mode = not self._quick_categorize_mode
@@ -798,14 +811,14 @@ class PopupWindow:
             self._focus_search()
 
     def _hide_edit_buttons(self):
-        """鍒嗙被妯″紡涓嬮殣钘忔墍鏈夋潯鐩殑缂栬緫鎸夐挳"""
+        """分类模式下隐藏所有条目的编辑按钮"""
         for frame, _, _ in self._item_widgets:
             edit_lbl = getattr(frame, '_edit_lbl', None)
             if edit_lbl:
                 edit_lbl.pack_forget()
 
     def _show_edit_buttons(self):
-        """閫€鍑哄垎绫绘ā寮忓悗鎭㈠缂栬緫鎸夐挳鏄剧ず"""
+        """退出分类模式后恢复编辑按钮显示"""
         for frame, _, _ in self._item_widgets:
             edit_lbl = getattr(frame, '_edit_lbl', None)
             if edit_lbl:
@@ -826,7 +839,7 @@ class PopupWindow:
         self.window.unbind("<Delete>")
 
     def _quick_delete(self):
-        """蹇€熷垹闄ゅ綋鍓嶆偓鍋滅殑鏉＄洰锛堝垎绫绘ā寮忎笅 Backspace/Delete锛?""
+        """快速删除当前悬停的条目（分类模式下 Backspace/Delete）"""
         if not self._quick_categorize_mode or self._hovered_item_id is None:
             return
         self.storage.soft_delete(self._hovered_item_id)
@@ -834,10 +847,10 @@ class PopupWindow:
         self._refresh_items()
 
     def _quick_categorize(self, key_num):
-        """蹇€熷垎绫绘ā寮忥細鏁板瓧閿?1-4 鏄犲皠
-        - prompt/image tab: 1-4 瀵瑰簲瀛愬垎绫?-4
-        - 鍏朵粬 tab: 1鏀惰棌 2Prompt 3鍥剧墖 4鍒犻櫎
-        鎿嶄綔鍚庡彧鍒锋柊鍗曟潯鐘舵€侊紙杞垹闄ら櫎澶栵級
+        """快速分类模式：数字键 1-4 映射
+        - prompt/image tab: 1-4 对应子分类1-4
+        - 其他 tab: 1收藏 2Prompt 3图片 4删除
+        操作后只刷新单条状态（软删除除外）
         """
         if not self._quick_categorize_mode or self._hovered_item_id is None:
             return
@@ -850,22 +863,22 @@ class PopupWindow:
             self.storage.set_subcategory(item_id, sub_key)
             self.storage.set_category(item_id, "prompt")
             name = get_subcategory_name(sub_key)
-            print(f"[蹇€熷垎绫籡 {item_id} -> Prompt/{name}")
+            print(f"[快速分类] {item_id} -> Prompt/{name}")
             self._update_item_status(item_id)
         elif tab == "image":
             sub_key = f"image_sub{key_num}"
             self.storage.set_subcategory(item_id, sub_key)
             self.storage.set_category(item_id, "image")
             name = get_subcategory_name(sub_key)
-            print(f"[蹇€熷垎绫籡 {item_id} -> Image/{name}")
+            print(f"[快速分类] {item_id} -> Image/{name}")
             self._update_item_status(item_id)
         else:
-            # 澶у垎绫绘槧灏? 1鏀惰棌 2Prompt 3鍥剧墖 4鍒犻櫎
+            # 大分类映射: 1收藏 2Prompt 3图片 4删除
             if key_num == 1:
                 self.storage.toggle_favorite(item_id)
                 item = self.storage.get_item_by_id(item_id)
                 if item and tab == "favorite" and not item.get("is_favorite"):
-                    # 鍦ㄦ敹钘?tab 鍙栨秷鏀惰棌锛屾潯鐩秷澶憋紝鍏ㄩ噺鍒锋柊
+                    # 在收藏 tab 取消收藏，条目消失，全量刷新
                     self._force_refresh = True
                     self._refresh_items()
                     return
@@ -881,7 +894,7 @@ class PopupWindow:
                 self._force_refresh = True
                 self._refresh_items()
 
-    # ========== 鎼滅储 ==========
+    # ========== 搜索 ==========
 
     def _on_search_focus_in(self, event):
         lang = get_language()
@@ -916,7 +929,7 @@ class PopupWindow:
                 self.search_var.set("")
                 self.search_entry.config(fg=self._fg)
 
-    # ========== 绐楀彛缂╂斁 ==========
+    # ========== 窗口缩放 ==========
 
     def _resize_start(self, event):
         self._resize_x = event.x_root
@@ -931,7 +944,7 @@ class PopupWindow:
         new_h = max(200, self._resize_h + dy)
         self.window.geometry(f"{new_w}x{new_h}")
 
-    # ========== 澶辩劍 ==========
+    # ========== 失焦 ==========
 
     def _on_focus_out(self, event):
         if self.window:
@@ -947,7 +960,7 @@ class PopupWindow:
         except Exception:
             pass
 
-    # ========== 鍙抽敭鑿滃崟 ==========
+    # ========== 右键菜单 ==========
 
     def _show_context_menu(self, event, item_id):
         menu = tk.Menu(self.window, tearoff=0, bg="#333333", fg=self._fg,
@@ -973,8 +986,8 @@ class PopupWindow:
             self.storage.mark_used(item_id)
 
     def _inline_edit(self, item_id, frame):
-        """鍐呰仈缂栬緫鏍囬锛氱偣鍑?[缂栬緫] 鍚庡師鍦板彉涓鸿緭鍏ユ"""
-        # 鎵惧埌 content_frame锛坒rame 涓渶鍚庝竴涓?Frame 瀛愮粍浠讹級
+        """内联编辑标题：点击 [编辑] 后原地变为输入框"""
+        # 找到 content_frame（frame 中最后一个 Frame 子组件）
         content_frame = None
         for c in reversed(frame.winfo_children()):
             if isinstance(c, tk.Frame):
@@ -987,7 +1000,7 @@ class PopupWindow:
         item = data["item"]
         current = item["summary"] or truncate_text(item["text_content"] or "", 40)
 
-        # 娓呴櫎鍘熷唴瀹癸紝鏇挎崲涓鸿緭鍏ユ
+        # 清除原内容，替换为输入框
         for w in content_frame.winfo_children():
             w.destroy()
 
@@ -1000,7 +1013,7 @@ class PopupWindow:
         entry.select_range(0, tk.END)
         entry.focus_set()
 
-        # 纭/鍙栨秷鎸夐挳
+        # 确认/取消按钮
         btn_frame = tk.Frame(content_frame, bg=self._bg)
         btn_frame.pack(side=tk.RIGHT, padx=(4, 0))
 
@@ -1010,19 +1023,19 @@ class PopupWindow:
                 self.storage.update_summary(item_id, new_title)
                 item["summary"] = new_title
                 self._dirty = True
-            # 鎭㈠鏄剧ず
+            # 恢复显示
             preview = item["summary"] or truncate_text(item["text_content"] or "", 40)
             self._build_item_content(content_frame, item, preview, data["time_str"])
 
         def _cancel():
             self._build_item_content(content_frame, item, data["preview"], data["time_str"])
 
-        check = tk.Label(btn_frame, text="[纭]", bg=self._bg, fg="#5f5",
+        check = tk.Label(btn_frame, text="[确认]", bg=self._bg, fg="#5f5",
                          font=("Segoe UI", 8), cursor="hand2")
         check.pack(side=tk.LEFT, padx=(0, 6))
         check.bind("<Button-1>", lambda e: _confirm())
 
-        cross = tk.Label(btn_frame, text="[鍙栨秷]", bg=self._bg, fg="#f55",
+        cross = tk.Label(btn_frame, text="[取消]", bg=self._bg, fg="#f55",
                          font=("Segoe UI", 8), cursor="hand2")
         cross.pack(side=tk.LEFT)
         cross.bind("<Button-1>", lambda e: _cancel())
@@ -1031,8 +1044,9 @@ class PopupWindow:
         entry.bind("<Escape>", lambda e: _cancel())
 
     def _build_item_content(self, parent, item, preview, time_str):
-        """鏋勫缓鏉＄洰姝ｆ枃锛堝彲琚唴鑱旂紪杈戞浛鎹級"""
-        # 娓呴櫎鏃у唴瀹?        for w in parent.winfo_children():
+        """构建条目正文（可被内联编辑替换）"""
+        # 清除旧内容
+        for w in parent.winfo_children():
             w.destroy()
 
         preview_lbl = tk.Label(parent, text=preview, bg=self._bg,
@@ -1044,11 +1058,12 @@ class PopupWindow:
                             fg="#666666", font=("Segoe UI", 8), anchor="w")
         time_lbl.pack(fill=tk.X, pady=(1, 0))
 
-        # 瀛樺紩鐢ㄧ粰鍐呰仈缂栬緫鐢?        parent._data = {"preview_lbl": preview_lbl, "item": item,
+        # 存引用给内联编辑用
+        parent._data = {"preview_lbl": preview_lbl, "item": item,
                         "preview": preview, "time_str": time_str}
 
     def _edit_title(self, item_id):
-        """鍏煎鍙抽敭鑿滃崟鐨勭紪杈戞爣棰樺叆鍙?""
+        """兼容右键菜单的编辑标题入口"""
         for f, item, _ in self._item_widgets:
             if item["id"] == item_id:
                 self._inline_edit(item_id, f)
@@ -1060,7 +1075,7 @@ class PopupWindow:
         self._force_refresh = True
         self._refresh_items()
 
-    # ========== 鍓创鏉挎搷浣?==========
+    # ========== 剪贴板操作 ==========
 
     def _copy_to_clipboard(self, text):
         try:
@@ -1114,7 +1129,7 @@ class PopupWindow:
         except Exception as e:
             print(f"[Paste] failed: {e}")
 
-    # ========== 瀛愮獥鍙?==========
+    # ========== 子窗口 ==========
 
     def _open_cleanup(self):
         CleanupWindow(self.window, self.storage)
@@ -1149,7 +1164,7 @@ class CleanupWindow:
         tk.Label(self.window, text="Cleanup", bg=bg, fg=fg,
                  font=("Microsoft YaHei UI", 14, "bold")).pack(pady=(16, 8))
 
-        # 缂撳瓨澶у皬鏄剧ず锛坱aste-skill: accent 鑹诧級
+        # 缓存大小显示（taste-skill: accent 色）
         self._size_label = tk.Label(self.window, text="", bg=bg, fg="#7eb8ff",
                                     font=("Segoe UI", 9))
         self._size_label.pack(anchor="w", padx=16, pady=(0, 4))
@@ -1200,7 +1215,7 @@ class CleanupWindow:
                   command=self.window.destroy).pack(side=tk.RIGHT, padx=(0, 8))
 
     def _format_size(self, size_bytes):
-        """瀛楄妭杞汉绫诲彲璇绘牸寮?""
+        """字节转人类可读格式"""
         if size_bytes < 1024:
             return f"{size_bytes} B"
         elif size_bytes < 1024 ** 2:
@@ -1215,12 +1230,12 @@ class CleanupWindow:
             w.destroy()
         self._check_vars = {}
 
-        # 鏇存柊缂撳瓨澶у皬
+        # 更新缓存大小
         try:
             size = self.storage.get_storage_size()
-            self._size_label.config(text=f"缂撳瓨鍗犵敤: {self._format_size(size)}")
+            self._size_label.config(text=f"缓存占用: {self._format_size(size)}")
         except Exception:
-            self._size_label.config(text="缂撳瓨鍗犵敤: --")
+            self._size_label.config(text="缓存占用: --")
 
         cat = None if self._filter_category == "all" else self._filter_category
         items = self.storage.get_items_sorted(sort_by=self._sort_by, category=cat)
@@ -1240,7 +1255,7 @@ class CleanupWindow:
             tk.Label(frame, text=f"Used: {item['use_count']}x", bg="#1c1c1c", fg="#888888",
                      font=("Segoe UI", 9)).pack(side=tk.RIGHT, padx=(0, 8))
             if is_fav:
-                tk.Label(frame, text="[宸叉敹钘廬", bg="#1c1c1c", fg="#f0c040", font=("Segoe UI", 9)).pack(side=tk.RIGHT)
+                tk.Label(frame, text="[已收藏]", bg="#1c1c1c", fg="#f0c040", font=("Segoe UI", 9)).pack(side=tk.RIGHT)
 
     def _toggle_all(self, state):
         for var in self._check_vars.values():
@@ -1265,7 +1280,7 @@ class CleanupWindow:
 
 
 # ============================================================
-# 鍗曚緥
+# 单例
 # ============================================================
 
 _popup_instance = None
