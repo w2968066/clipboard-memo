@@ -1,5 +1,6 @@
 """
-鍓创鏉跨洃鎺фā鍧?鍊熼壌 Ditto 鐨勬€濊矾锛岃疆璇?Windows 鍓创鏉匡紝妫€娴嬪彉鍖栧悗鍒嗙被瀛樺偍
+剪贴板监控模块
+借鉴 Ditto 的思路，轮询 Windows 剪贴板，检测变化后分类存储
 """
 
 import time
@@ -13,7 +14,7 @@ from storage import get_storage
 
 
 class ClipboardMonitor:
-    """鍓创鏉垮彉鍖栫洃鎺у櫒"""
+    """剪贴板变化监控器"""
 
     def __init__(self):
         self.storage = get_storage()
@@ -21,12 +22,13 @@ class ClipboardMonitor:
         self._thread = None
         self._last_hash = None
         self._poll_interval = get_config("poll_interval_ms", 500) / 1000.0
-        self._callbacks = []  # 鏂版潯鐩洖璋冨垪琛?        self._win32clipboard = None
+        self._callbacks = []  # 新条目回调列表
+        self._win32clipboard = None
         self._win32con = None
-        self._cleanup_counter = 0  # 鎺у埗娓呯悊棰戠巼
+        self._cleanup_counter = 0  # 控制清理频率
 
     def _init_win32(self):
-        """寤惰繜瀵煎叆 win32 妯″潡"""
+        """延迟导入 win32 模块"""
         if self._win32clipboard is None:
             try:
                 import win32clipboard
@@ -35,53 +37,53 @@ class ClipboardMonitor:
                 self._win32con = win32con
                 return True
             except ImportError:
-                print("[璀﹀憡] pywin32 鏈畨瑁咃紝鍓创鏉跨洃鎺т笉鍙敤")
+                print("[警告] pywin32 未安装，剪贴板监控不可用")
                 return False
         return True
 
     def on_new_item(self, callback):
-        """娉ㄥ唽鏂版潯鐩洖璋?""
+        """注册新条目回调"""
         self._callbacks.append(callback)
 
     def start(self):
-        """鍚姩鍓创鏉跨洃鎺?""
+        """启动剪贴板监控"""
         if self._running:
             return
 
         if not self._init_win32():
-            print("[閿欒] 鏃犳硶鍒濆鍖栧壀璐存澘鐩戞帶")
+            print("[错误] 无法初始化剪贴板监控")
             return
 
         self._running = True
         self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self._thread.start()
-        print(f"[鍓创鏉跨洃鎺 宸插惎鍔?(杞闂撮殧: {self._poll_interval}s)")
+        print(f"[剪贴板监控] 已启动 (轮询间隔: {self._poll_interval}s)")
 
     def stop(self):
-        """鍋滄鍓创鏉跨洃鎺?""
+        """停止剪贴板监控"""
         self._running = False
         if self._thread:
             self._thread.join(timeout=2)
-        print("[鍓创鏉跨洃鎺 宸插仠姝?)
+        print("[剪贴板监控] 已停止")
 
     def _monitor_loop(self):
-        """鐩戞帶涓诲惊鐜?""
+        """监控主循环"""
         while self._running:
             try:
                 self._check_clipboard()
             except Exception as e:
-                print(f"[鍓创鏉跨洃鎺 閿欒: {e}")
+                print(f"[剪贴板监控] 错误: {e}")
             time.sleep(self._poll_interval)
 
     def _check_clipboard(self):
-        """妫€鏌ュ壀璐存澘鍐呭鏄惁鍙樺寲"""
+        """检查剪贴板内容是否变化"""
         try:
             self._win32clipboard.OpenClipboard()
         except Exception:
             return
 
         try:
-            # 妫€鏌ュ壀璐存澘搴忓垪鍙凤紙蹇€熷垽鏂槸鍚﹀彉鍖栵級
+            # 检查剪贴板序列号（快速判断是否变化）
             if hasattr(self._win32clipboard, 'GetClipboardSequenceNumber'):
                 try:
                     seq = self._win32clipboard.GetClipboardSequenceNumber()
@@ -91,11 +93,12 @@ class ClipboardMonitor:
                 except Exception:
                     pass
 
-            # 灏濊瘯鑾峰彇鏂囨湰
+            # 尝试获取文本
             text_content = None
             image_data = None
 
-            # 鍏堟鏌ュ彲鐢ㄦ牸寮?            formats = []
+            # 先检查可用格式
+            formats = []
             fmt = 0
             try:
                 while True:
@@ -111,7 +114,7 @@ class ClipboardMonitor:
             cf_bitmap = getattr(self._win32con, 'CF_BITMAP', 2)
             cf_dib = getattr(self._win32con, 'CF_DIB', 8)
 
-            # 鑾峰彇鏂囨湰
+            # 获取文本
             if cf_text in formats:
                 try:
                     text_content = self._win32clipboard.GetClipboardData(cf_text)
@@ -128,7 +131,8 @@ class ClipboardMonitor:
                 except Exception:
                     pass
 
-            # 鑾峰彇鍥剧墖锛堣褰曟槸鍚︽湁鍥剧墖鏍煎紡锛屽叧闂壀璐存澘鍚庡啀鐢?PIL 鑾峰彇锛?            has_image = cf_dib in formats or cf_bitmap in formats
+            # 获取图片（记录是否有图片格式，关闭剪贴板后再用 PIL 获取）
+            has_image = cf_dib in formats or cf_bitmap in formats
 
         finally:
             try:
@@ -136,7 +140,7 @@ class ClipboardMonitor:
             except Exception:
                 pass
 
-        # 澶勭悊鑾峰彇鍒扮殑鍐呭锛堝壀璐存澘宸插叧闂級
+        # 处理获取到的内容（剪贴板已关闭）
         if has_image:
             image_data = self._get_clipboard_image()
             if image_data:
@@ -145,22 +149,24 @@ class ClipboardMonitor:
             self._process_text(text_content)
 
     def _process_text(self, text):
-        """澶勭悊鏂囨湰鍐呭"""
+        """处理文本内容"""
         content_hash = compute_hash(text)
 
-        # 鍘婚噸锛氫笌涓婁竴鏉＄浉鍚?        if content_hash == self._last_hash:
+        # 去重：与上一条相同
+        if content_hash == self._last_hash:
             return
         self._last_hash = content_hash
 
-        # 鏌ユ壘鏄惁宸插瓨鍦?        existing = self.storage.get_item_by_hash(content_hash)
+        # 查找是否已存在
+        existing = self.storage.get_item_by_hash(content_hash)
         if existing:
             self.storage.update_copy(existing["id"])
             return
 
-        # 鍒嗙被
+        # 分类
         category, summary, subcategory = classify_text(text)
 
-        # 瀛樺偍
+        # 存储
         item_id = self.storage.add_item(
             content_type="text",
             text_content=text,
@@ -170,48 +176,50 @@ class ClipboardMonitor:
             summary=summary
         )
 
-        # 浣庨娓呯悊锛氭瘡 20 娆℃柊鍐呭鎵嶆墽琛屼竴娆℃竻鐞?        self._cleanup_counter += 1
+        # 低频清理：每 20 次新内容才执行一次清理
+        self._cleanup_counter += 1
         if self._cleanup_counter >= 20:
             self.storage.cleanup_old_items()
             self._cleanup_counter = 0
 
-        # 閫氱煡鍥炶皟
+        # 通知回调
         for cb in self._callbacks:
             try:
                 cb(item_id, category, summary)
             except Exception as e:
-                print(f"[鍓创鏉跨洃鎺 鍥炶皟閿欒: {e}")
+                print(f"[剪贴板监控] 回调错误: {e}")
 
-        print(f"[鍓创鏉跨洃鎺 鏂版枃鏈?[{category}]: {summary}")
+        print(f"[剪贴板监控] 新文本 [{category}]: {summary}")
 
     def _process_image(self, image_bytes):
-        """澶勭悊鍥剧墖鍐呭"""
+        """处理图片内容"""
         content_hash = compute_image_hash(image_bytes)
 
-        # 鍘婚噸
+        # 去重
         if content_hash == self._last_hash:
             return
         self._last_hash = content_hash
 
-        # 鏌ユ壘鏄惁宸插瓨鍦?        existing = self.storage.get_item_by_hash(content_hash)
+        # 查找是否已存在
+        existing = self.storage.get_item_by_hash(content_hash)
         if existing:
             self.storage.update_copy(existing["id"])
             return
 
-        # 淇濆瓨鍥剧墖鏂囦欢
+        # 保存图片文件
         filename = generate_image_filename()
         filepath = os.path.join(IMAGES_DIR, filename)
         try:
             with open(filepath, "wb") as f:
                 f.write(image_bytes)
         except Exception as e:
-            print(f"[鍓创鏉跨洃鎺 淇濆瓨鍥剧墖澶辫触: {e}")
+            print(f"[剪贴板监控] 保存图片失败: {e}")
             return
 
-        # 鐢熸垚鎽樿
-        summary = f"鎴浘_{filename[:20]}"
+        # 生成摘要
+        summary = f"截图_{filename[:20]}"
 
-        # 瀛樺偍
+        # 存储
         item_id = self.storage.add_item(
             content_type="image",
             text_content=None,
@@ -221,23 +229,23 @@ class ClipboardMonitor:
             summary=summary
         )
 
-        # 浣庨娓呯悊
+        # 低频清理
         self._cleanup_counter += 1
         if self._cleanup_counter >= 20:
             self.storage.cleanup_old_items()
             self._cleanup_counter = 0
 
-        # 閫氱煡鍥炶皟
+        # 通知回调
         for cb in self._callbacks:
             try:
                 cb(item_id, "image", summary)
             except Exception as e:
-                print(f"[鍓创鏉跨洃鎺 鍥炶皟閿欒: {e}")
+                print(f"[剪贴板监控] 回调错误: {e}")
 
-        print(f"[鍓创鏉跨洃鎺 鏂板浘鐗? {summary}")
+        print(f"[剪贴板监控] 新图片: {summary}")
 
     def _get_clipboard_image(self):
-        """浠庡壀璐存澘鑾峰彇鍥剧墖鏁版嵁锛堝湪鍓创鏉垮叧闂悗璋冪敤锛?""
+        """从剪贴板获取图片数据（在剪贴板关闭后调用）"""
         try:
             from PIL import ImageGrab, Image
             import io
@@ -250,11 +258,11 @@ class ClipboardMonitor:
         except ImportError:
             pass
         except Exception as e:
-            print(f"[鍓创鏉跨洃鎺 鍥剧墖鑾峰彇澶辫触: {e}")
+            print(f"[剪贴板监控] 图片获取失败: {e}")
         return None
 
     def get_current_text(self):
-        """鎵嬪姩鑾峰彇褰撳墠鍓创鏉挎枃鏈紙鐢ㄤ簬璋冭瘯/鎵嬪姩瑙﹀彂锛?""
+        """手动获取当前剪贴板文本（用于调试/手动触发）"""
         if not self._init_win32():
             return None
         try:
@@ -271,12 +279,12 @@ class ClipboardMonitor:
             return None
 
 
-# 鍏ㄥ眬鍗曚緥
+# 全局单例
 _monitor_instance = None
 
 
 def get_monitor():
-    """鑾峰彇鍓创鏉跨洃鎺у崟渚?""
+    """获取剪贴板监控单例"""
     global _monitor_instance
     if _monitor_instance is None:
         _monitor_instance = ClipboardMonitor()
