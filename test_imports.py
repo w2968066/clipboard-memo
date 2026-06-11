@@ -21,15 +21,15 @@ print('  classifier.py OK')
 
 # Test classifier
 tests = [
-    ('甯垜鍐欎竴涓狿ython鑴氭湰锛屽疄鐜拌嚜鍔ㄥ浠藉姛鑳?, 'prompt'),
+    ('帮我写一个Python脚本，实现自动备份功能', 'prompt'),
     ('https://www.example.com/path/to/page', 'other_text'),
     ('hello world', 'other_text'),
-    ('浣犳槸涓€涓祫娣辩殑Python寮€鍙戣€咃紝璇峰府鎴戝垎鏋愯繖娈典唬鐮佺殑鎬ц兘闂', 'prompt'),
+    ('你是一个资深的Python开发者，请帮我分析这段代码的性能问题', 'prompt'),
     ('translate the following text to Chinese: Hello, how are you?', 'prompt'),
     ('act as a senior engineer and review this code', 'prompt'),
-    ('浠婂ぉ澶╂皵涓嶉敊', 'other_text'),
-    ('甯垜', 'other_text'),  # too short, score reduced by 0.5
-    ('璇风敤markdown鏍煎紡鍐欎竴浠介」鐩鍒掍功锛屽寘鍚互涓嬪唴瀹癸細1. 椤圭洰鑳屾櫙 2. 鎶€鏈柟妗?3. 瀹炴柦姝ラ', 'prompt'),
+    ('今天天气不错', 'other_text'),
+    ('帮我', 'other_text'),  # too short, score reduced by 0.5
+    ('请用markdown格式写一份项目计划书，包含以下内容：1. 项目背景 2. 技术方案 3. 实施步骤', 'prompt'),
 ]
 
 print('\nClassifier tests:')
