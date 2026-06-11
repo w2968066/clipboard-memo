@@ -25,9 +25,21 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      # 仓库里没有 assets/icon.png，config.json 被 .gitignore 排除，
+      # 不能用 --icon / --add-data 引用；托盘图标有代码兜底，
+      # config.json 首次运行时自动生成在 exe 旁边
       - name: Build with PyInstaller
         run: |
-          pyinstaller --onefile --windowed --name ClipboardMemo --icon assets/icon.png --add-data "config.json;." main.py
+          pyinstaller --onefile --windowed --name ClipboardMemo --hidden-import pystray._win32 main.py
+
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          Start-Process dist\ClipboardMemo.exe
+          Start-Sleep -Seconds 8
+          $p = Get-Process ClipboardMemo -ErrorAction SilentlyContinue
+          if (-not $p) { Write-Error "exe crashed on startup"; exit 1 }
+          Stop-Process -Name ClipboardMemo -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -55,18 +67,19 @@ jobs:
             极简本地剪贴板管理工具，专为 AI 用户设计。
 
             ### 使用方式
-            1. 下载 `ClipboardMemo.exe`
+            1. 下载 `ClipboardMemo.exe`（绿色便携版，无需安装）
             2. 双击运行，托盘自动启动
-            3. 按 `Ctrl+Shift+V` 呼出浮窗
+            3. 按 `Ctrl+Alt+V` 呼出浮窗（可在设置中修改）
             4. 复制文本/截图，自动记录
 
-            ### 变更
-            查看 [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+            > 数据（config.json、data/）保存在 exe 所在目录，
+            > 建议放到单独的文件夹中运行。
 
             ### 校验
             ```
             sha256sum ClipboardMemo.exe
             ```
           files: ClipboardMemo.exe
+          generate_release_notes: true
           draft: false
           prerelease: false
