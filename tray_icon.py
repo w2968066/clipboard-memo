@@ -1,5 +1,5 @@
 """
-绯荤粺鎵樼洏鍥炬爣妯″潡
+系统托盘图标模块
 """
 
 import threading
@@ -10,7 +10,7 @@ from config import ICON_PATH, IMAGES_DIR, get_config, set_config
 
 
 class TrayIcon:
-    """绯荤粺鎵樼洏鍥炬爣绠＄悊"""
+    """系统托盘图标管理"""
 
     def __init__(self, on_open=None, on_cleanup=None, on_settings=None, on_exit=None):
         self._on_open = on_open
@@ -23,73 +23,74 @@ class TrayIcon:
         self._pystray_available = False
 
     def start(self):
-        """鍚姩绯荤粺鎵樼洏"""
+        """启动系统托盘"""
         try:
             import pystray
             from PIL import Image, ImageDraw
 
             self._pystray_available = True
 
-            # 鍒涘缓鍥炬爣
+            # 创建图标
             icon_path = self._get_icon_path()
             if os.path.exists(icon_path):
                 self._icon = Image.open(icon_path)
             else:
-                # 鐢熸垚榛樿鍥炬爣
+                # 生成默认图标
                 self._icon = self._create_default_icon()
 
-            # 鍒涘缓鑿滃崟锛堢函鏂囧瓧锛屾棤 emoji锛?            menu = pystray.Menu(
-                pystray.MenuItem("鎵撳紑鍓创鏉?, self._handle_open, default=True),
+            # 创建菜单（纯文字，无 emoji）
+            menu = pystray.Menu(
+                pystray.MenuItem("打开剪贴板", self._handle_open, default=True),
                 pystray.Menu.SEPARATOR,
-                pystray.MenuItem("璁剧疆", self._handle_settings),
-                pystray.MenuItem("娓呯悊鍓创鏉?..", self._handle_cleanup),
+                pystray.MenuItem("设置", self._handle_settings),
+                pystray.MenuItem("清理剪贴板...", self._handle_cleanup),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem(
-                    "寮€鏈鸿嚜鍚?,
+                    "开机自启",
                     self._handle_toggle_autostart,
                     checked=lambda item: get_config("auto_start", False)
                 ),
                 pystray.Menu.SEPARATOR,
-                pystray.MenuItem("閫€鍑?, self._handle_exit),
+                pystray.MenuItem("退出", self._handle_exit),
             )
 
             self._tray = pystray.Icon(
                 "clipboard_memo",
                 self._icon,
-                "鍓创鏉垮蹇樺綍",
+                "剪贴板备忘录",
                 menu
             )
 
             self._running = True
-            # 鍦ㄧ嫭绔嬬嚎绋嬩腑杩愯鎵樼洏
+            # 在独立线程中运行托盘
             tray_thread = threading.Thread(
                 target=self._tray.run, daemon=True
             )
             tray_thread.start()
-            print("[鎵樼洏] 绯荤粺鎵樼洏宸插惎鍔?)
+            print("[托盘] 系统托盘已启动")
 
             return True
 
         except ImportError:
-            print("[鎵樼洏] pystray 鏈畨瑁咃紝鎵樼洏鍔熻兘涓嶅彲鐢?)
+            print("[托盘] pystray 未安装，托盘功能不可用")
             self._pystray_available = False
             return False
         except Exception as e:
-            print(f"[鎵樼洏] 鍚姩澶辫触: {e}")
+            print(f"[托盘] 启动失败: {e}")
             return False
 
     def stop(self):
-        """鍋滄绯荤粺鎵樼洏"""
+        """停止系统托盘"""
         self._running = False
         if self._tray:
             try:
                 self._tray.stop()
             except Exception:
                 pass
-        print("[鎵樼洏] 宸插仠姝?)
+        print("[托盘] 已停止")
 
     def notify(self, title, message):
-        """鍙戦€侀€氱煡锛堝鏋滃彲鐢級"""
+        """发送通知（如果可用）"""
         if self._tray and hasattr(self._tray, 'notify'):
             try:
                 self._tray.notify(title, message)
@@ -97,8 +98,9 @@ class TrayIcon:
                 pass
 
     def _get_icon_path(self):
-        """鑾峰彇鍥炬爣鏂囦欢璺緞"""
-        # 灏濊瘯澶氱鍙兘鐨勫浘鏍囦綅缃?        possible_paths = [
+        """获取图标文件路径"""
+        # 尝试多种可能的图标位置
+        possible_paths = [
             ICON_PATH,
             os.path.join(os.path.dirname(__file__), "assets", "icon.png"),
             os.path.join(os.path.dirname(__file__), "icon.png"),
@@ -109,16 +111,16 @@ class TrayIcon:
         return ICON_PATH
 
     def _create_default_icon(self):
-        """鍒涘缓榛樿鍥炬爣锛堣摑鑹插渾褰?+ 鐧藉瓧 C锛?""
+        """创建默认图标（蓝色圆形 + 白字 C）"""
         from PIL import Image, ImageDraw, ImageFont
         size = 64
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
 
-        # 钃濊壊鍦嗗舰鑳屾櫙
+        # 蓝色圆形背景
         draw.ellipse([4, 4, size-4, size-4], fill="#4a9eff")
 
-        # 鐧借壊 "C" 鏂囧瓧
+        # 白色 "C" 文字
         try:
             font = ImageFont.truetype("segoeui.ttf", 32)
         except Exception:
@@ -127,7 +129,7 @@ class TrayIcon:
             except Exception:
                 font = ImageFont.load_default()
 
-        # 鎵嬪姩灞呬腑鏂囧瓧
+        # 手动居中文字
         text = "C"
         bbox = draw.textbbox((0, 0), text, font=font)
         tw = bbox[2] - bbox[0]
@@ -138,27 +140,27 @@ class TrayIcon:
         return img
 
     def _handle_open(self):
-        """鎵撳紑鍓创鏉挎诞绐楋紙鍙屽嚮/榛樿锛氬睆骞曚腑澶級"""
+        """打开剪贴板浮窗（双击/默认：屏幕中央）"""
         if self._on_open:
             self._on_open(center=True)
 
     def _handle_settings(self):
-        """鎵撳紑璁剧疆绐楀彛"""
+        """打开设置窗口"""
         if self._on_settings:
             self._on_settings()
 
     def _handle_cleanup(self):
-        """鎵撳紑娓呯悊绐楀彛"""
+        """打开清理窗口"""
         if self._on_cleanup:
             self._on_cleanup()
 
     def _handle_exit(self):
-        """閫€鍑虹▼搴?""
+        """退出程序"""
         if self._on_exit:
             self._on_exit()
 
     def _handle_toggle_autostart(self):
-        """鍒囨崲寮€鏈鸿嚜鍚?""
+        """切换开机自启"""
         current = get_config("auto_start", False)
         new_state = not current
         set_config("auto_start", new_state)
@@ -169,7 +171,7 @@ class TrayIcon:
             self._disable_autostart()
 
     def _enable_autostart(self):
-        """鍚敤寮€鏈鸿嚜鍚紙鍐欏叆娉ㄥ唽琛級"""
+        """启用开机自启（写入注册表）"""
         try:
             import winreg
             key = winreg.OpenKey(
@@ -184,7 +186,8 @@ class TrayIcon:
                 script_path = os.path.abspath(
                     os.path.join(os.path.dirname(__file__), "main.py")
                 )
-            # 浣跨敤 pythonw.exe 閬垮厤鏄剧ず鎺у埗鍙?            exe_dir = os.path.dirname(sys.executable)
+            # 使用 pythonw.exe 避免显示控制台
+            exe_dir = os.path.dirname(sys.executable)
             pythonw = os.path.join(exe_dir, "pythonw.exe")
             if os.path.exists(pythonw):
                 cmd = f'"{pythonw}" "{script_path}"'
@@ -192,12 +195,12 @@ class TrayIcon:
                 cmd = f'"{sys.executable}" "{script_path}"'
             winreg.SetValueEx(key, "ClipboardMemo", 0, winreg.REG_SZ, cmd)
             winreg.CloseKey(key)
-            print("[鎵樼洏] 寮€鏈鸿嚜鍚凡鍚敤")
+            print("[托盘] 开机自启已启用")
         except Exception as e:
-            print(f"[鎵樼洏] 璁剧疆寮€鏈鸿嚜鍚け璐? {e}")
+            print(f"[托盘] 设置开机自启失败: {e}")
 
     def _disable_autostart(self):
-        """绂佺敤寮€鏈鸿嚜鍚?""
+        """禁用开机自启"""
         try:
             import winreg
             key = winreg.OpenKey(
@@ -210,6 +213,6 @@ class TrayIcon:
             except FileNotFoundError:
                 pass
             winreg.CloseKey(key)
-            print("[鎵樼洏] 寮€鏈鸿嚜鍚凡绂佺敤")
+            print("[托盘] 开机自启已禁用")
         except Exception as e:
-            print(f"[鎵樼洏] 鍙栨秷寮€鏈鸿嚜鍚け璐? {e}")
+            print(f"[托盘] 取消开机自启失败: {e}")
