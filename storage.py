@@ -6,7 +6,7 @@ import sqlite3
 import os
 import threading
 from datetime import datetime, timedelta
-from config import DB_PATH, DATA_DIR, get_config
+from config import DB_PATH, DATA_DIR, IMAGES_DIR, get_config
 
 
 class Storage:

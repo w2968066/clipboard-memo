@@ -42,6 +42,8 @@ class PopupWindow:
         self._thumbnails = OrderedDict()  # LRU 缓存: path -> PhotoImage
         self._last_sig = None     # 数据签名，用于跳过无变化刷新
         self._force_refresh = False
+        self._paste_target_hwnd = None
+        self._paste_focus_hwnd = None
 
     def mark_dirty(self):
         """标记数据已变化"""
@@ -104,11 +106,9 @@ class PopupWindow:
 
         self._visible = True
         self._quick_categorize_mode = False
+        self._paste_target_hwnd = self._get_foreground_hwnd()
+        self._paste_focus_hwnd = self._get_focused_hwnd()
         self._create_window()
-
-        self.window.deiconify()
-        self.window.lift()
-        self.window.update_idletasks()
 
         if center:
             self._position_at_center()
@@ -118,17 +118,32 @@ class PopupWindow:
         if self._dirty or self._force_refresh:
             self._refresh_items()
 
-        self._update_quick_categorize_ui()
-        self.window.focus_force()
-        self._focus_search()
+        self._update_quick_categorize_ui(focus_search=False)
+        self.window.update_idletasks()
+        self.window.deiconify()
+        self.window.update_idletasks()
+        self._show_without_activation()
+        self._start_outside_click_watch()
 
     def hide(self):
         self._visible = False
+        self._outside_watch_on = False
         self._hovered_item_id = None
         self._selected_index = -1
         self._quick_categorize_mode = False
         if self.window:
-            self.window.withdraw()
+            try:
+                self.window.withdraw()
+                self.window.update_idletasks()
+            except Exception:
+                pass
+            try:
+                import ctypes
+                hwnd = self._get_toplevel_hwnd()
+                if hwnd:
+                    ctypes.windll.user32.ShowWindow(hwnd, 0)
+            except Exception:
+                pass
 
     def toggle(self):
         if self._visible:
@@ -140,10 +155,91 @@ class PopupWindow:
         if self.window:
             if self._dirty or self._force_refresh:
                 self._refresh_items()
+            self.window.update_idletasks()
+            self.window.deiconify()
+            self.window.update_idletasks()
+            self._show_without_activation()
+
+    def _get_toplevel_hwnd(self):
+        """取真正的顶层窗口句柄。
+
+        Tk 在 Windows 上 winfo_id() 返回的是客户区子窗口，
+        操作系统层面的顶层窗口是它的祖先（wrapper），
+        WS_EX_NOACTIVATE 等样式必须设在 wrapper 上才生效。
+        """
+        if not self.window:
+            return None
+        try:
+            import ctypes
+            hwnd = self.window.winfo_id()
+            GA_ROOT = 2
+            root = ctypes.windll.user32.GetAncestor(hwnd, GA_ROOT)
+            return root or hwnd
+        except Exception:
+            return None
+
+    def _make_no_activate(self):
+        if not self.window:
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            hwnd = self._get_toplevel_hwnd()
+            if not hwnd:
+                return
+            GWL_EXSTYLE = -20
+            WS_EX_NOACTIVATE = 0x08000000
+            WS_EX_TOOLWINDOW = 0x00000080
+            SWP_NOSIZE = 0x0001
+            SWP_NOMOVE = 0x0002
+            SWP_NOZORDER = 0x0004
+            SWP_NOACTIVATE = 0x0010
+            SWP_FRAMECHANGED = 0x0020
+
+            get_long = getattr(user32, "GetWindowLongPtrW", user32.GetWindowLongW)
+            set_long = getattr(user32, "SetWindowLongPtrW", user32.SetWindowLongW)
+            get_long.argtypes = [wintypes.HWND, ctypes.c_int]
+            get_long.restype = ctypes.c_void_p
+            set_long.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_void_p]
+            set_long.restype = ctypes.c_void_p
+
+            style = int(get_long(hwnd, GWL_EXSTYLE) or 0)
+            style |= WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW
+            set_long(hwnd, GWL_EXSTYLE, ctypes.c_void_p(style))
+            user32.SetWindowPos(
+                hwnd, 0, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED
+            )
+        except Exception as e:
+            print(f"[Popup] no-activate style failed: {e}")
+
+    def _show_without_activation(self):
+        if not self.window:
+            return
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            hwnd = self._get_toplevel_hwnd()
+            if not hwnd:
+                return
+            HWND_TOPMOST = -1
+            SW_SHOWNOACTIVATE = 4
+            SWP_NOSIZE = 0x0001
+            SWP_NOMOVE = 0x0002
+            SWP_NOACTIVATE = 0x0010
+            SWP_SHOWWINDOW = 0x0040
+            self._make_no_activate()
+            user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
+            user32.SetWindowPos(
+                hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW
+            )
+        except Exception as e:
+            print(f"[Popup] show without activation failed: {e}")
             self.window.deiconify()
             self.window.lift()
-            self.window.focus_force()
-            self._focus_search()
 
     # ========== 窗口创建 ==========
 
@@ -322,6 +418,10 @@ class PopupWindow:
         self._popup_width = get_config("popup_width", 380)
         self._popup_max_height = get_config("popup_max_height", 500)
         self.window.geometry(f"{self._popup_width}x{self._popup_max_height}")
+
+        # 窗口一创建就设 NOACTIVATE，避免初次显示瞬间抢走目标窗口焦点
+        self.window.update_idletasks()
+        self._make_no_activate()
 
     def _reset_search_placeholder(self):
         lang = get_language()
@@ -692,14 +792,22 @@ class PopupWindow:
         if not item or item.get("deleted"):
             return
 
+        paste_text = None
         if item["content_type"] == "text" and item["text_content"]:
-            self._copy_to_clipboard(item["text_content"])
+            paste_text = item["text_content"]
+            self._copy_to_clipboard(paste_text)
         elif item["content_type"] == "image" and item["image_path"]:
             self._copy_image_to_clipboard(item["image_path"])
 
         self.storage.mark_used(item_id)
+
+        target_hwnd = self._paste_target_hwnd
+        focus_hwnd = self._paste_focus_hwnd
         self.hide()
-        self.window.after(100, self._simulate_paste)
+        self.window.after(
+            180,
+            lambda hwnd=target_hwnd, focus=focus_hwnd, text=paste_text: self._simulate_paste(hwnd, focus, text)
+        )
 
     def _paste_selected(self):
         if 0 <= self._selected_index < len(self._item_widgets):
@@ -785,11 +893,33 @@ class PopupWindow:
 
     # ========== 快速分类 ==========
 
+    def _activate_popup(self):
+        """显式让弹窗拿键盘焦点。
+
+        NOACTIVATE 样式只阻止点击激活，程序主动激活仍然允许。
+        分类模式需要接收数字键，必须先把焦点拿过来，
+        否则按键会落进后面目标应用的输入框。
+        """
+        if not self.window:
+            return
+        try:
+            import ctypes
+            hwnd = self._get_toplevel_hwnd()
+            if hwnd:
+                self._tap_alt_for_foreground_permission()
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
+        try:
+            self.window.focus_force()
+        except Exception:
+            pass
+
     def _toggle_quick_categorize(self):
         self._quick_categorize_mode = not self._quick_categorize_mode
         self._update_quick_categorize_ui()
 
-    def _update_quick_categorize_ui(self):
+    def _update_quick_categorize_ui(self, focus_search=True):
         if not self.window:
             return
         if self._quick_categorize_mode:
@@ -802,13 +932,15 @@ class PopupWindow:
             self._hide_edit_buttons()
             self._force_refresh = True
             self._refresh_items()
+            self._activate_popup()
         else:
             self._quick_cat_btn.configure(text=t("btn_categorize"), fg=self._muted)
             self.search_entry.configure(state="normal")
             self._unbind_quick_categorize_keys()
             self._show_edit_buttons()
             self._reset_search_placeholder()
-            self._focus_search()
+            if focus_search:
+                self._focus_search()
 
     def _hide_edit_buttons(self):
         """分类模式下隐藏所有条目的编辑按钮"""
@@ -823,8 +955,6 @@ class PopupWindow:
             edit_lbl = getattr(frame, '_edit_lbl', None)
             if edit_lbl:
                 edit_lbl.pack(side=tk.RIGHT, padx=(2, 0))
-        if not self._quick_categorize_mode:
-            self._quick_cat_btn.configure(fg=self._fg if is_hover else self._muted)
 
     def _bind_quick_categorize_keys(self):
         for i in range(1, 5):
@@ -945,6 +1075,35 @@ class PopupWindow:
         self.window.geometry(f"{new_w}x{new_h}")
 
     # ========== 失焦 ==========
+
+    def _start_outside_click_watch(self):
+        """NOACTIVATE 窗口收不到 FocusOut，改为轮询检测窗口外的鼠标按下来关闭弹窗"""
+        self._outside_watch_on = True
+        self._outside_btn_was_down = True  # 先视为按下，跳过呼出弹窗那一次点击
+        self._poll_outside_click()
+
+    def _poll_outside_click(self):
+        if not getattr(self, "_outside_watch_on", False) or not self._visible or not self.window:
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+            user32 = ctypes.windll.user32
+            down = bool(user32.GetAsyncKeyState(0x01) & 0x8000) or \
+                   bool(user32.GetAsyncKeyState(0x02) & 0x8000)
+            if down and not self._outside_btn_was_down:
+                pt = wintypes.POINT()
+                rect = wintypes.RECT()
+                hwnd = self._get_toplevel_hwnd()
+                if hwnd and user32.GetCursorPos(ctypes.byref(pt)) and \
+                        user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                    if not (rect.left <= pt.x <= rect.right and rect.top <= pt.y <= rect.bottom):
+                        self.hide()
+                        return
+            self._outside_btn_was_down = down
+        except Exception:
+            pass
+        self.window.after(120, self._poll_outside_click)
 
     def _on_focus_out(self, event):
         if self.window:
@@ -1079,12 +1238,64 @@ class PopupWindow:
 
     def _copy_to_clipboard(self, text):
         try:
+            import html
+            import time
             import win32clipboard
             import win32con
-            win32clipboard.OpenClipboard()
-            win32clipboard.EmptyClipboard()
-            win32clipboard.SetClipboardText(text, win32con.CF_UNICODETEXT)
-            win32clipboard.CloseClipboard()
+
+            def build_cf_html(value):
+                body = html.escape(value).replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br>")
+                start_marker = "<!--StartFragment-->"
+                end_marker = "<!--EndFragment-->"
+                fragment = f"{start_marker}{body}{end_marker}"
+                document = f"<html><body>{fragment}</body></html>"
+                header_template = (
+                    "Version:0.9\r\n"
+                    "StartHTML:{start_html:010d}\r\n"
+                    "EndHTML:{end_html:010d}\r\n"
+                    "StartFragment:{start_fragment:010d}\r\n"
+                    "EndFragment:{end_fragment:010d}\r\n"
+                )
+                empty_header = header_template.format(
+                    start_html=0, end_html=0, start_fragment=0, end_fragment=0
+                )
+                start_html = len(empty_header.encode("utf-8"))
+                prefix = document[:document.index(start_marker) + len(start_marker)]
+                start_fragment = start_html + len(prefix.encode("utf-8"))
+                end_fragment = start_fragment + len(body.encode("utf-8"))
+                end_html = start_html + len(document.encode("utf-8"))
+                header = header_template.format(
+                    start_html=start_html,
+                    end_html=end_html,
+                    start_fragment=start_fragment,
+                    end_fragment=end_fragment,
+                )
+                return (header + document).encode("utf-8")
+
+            for _ in range(5):
+                try:
+                    win32clipboard.OpenClipboard()
+                    break
+                except Exception:
+                    time.sleep(0.03)
+            else:
+                print("[Clipboard] OpenClipboard failed")
+                return
+
+            try:
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
+                try:
+                    win32clipboard.SetClipboardData(win32con.CF_TEXT, text.encode("mbcs", errors="replace"))
+                except Exception:
+                    pass
+                try:
+                    cf_html = win32clipboard.RegisterClipboardFormat("HTML Format")
+                    win32clipboard.SetClipboardData(cf_html, build_cf_html(text))
+                except Exception:
+                    pass
+            finally:
+                win32clipboard.CloseClipboard()
         except Exception as e:
             print(f"[Clipboard] copy failed: {e}")
 
@@ -1114,11 +1325,219 @@ class PopupWindow:
         except Exception as e:
             print(f"[Clipboard] image copy failed: {e}")
 
-    def _simulate_paste(self):
+    def _get_foreground_hwnd(self):
+        try:
+            import ctypes
+            hwnd = ctypes.windll.user32.GetForegroundWindow()
+            if hwnd and (not self.window or hwnd != self.window.winfo_id()):
+                return hwnd
+        except Exception:
+            pass
+        return None
+
+    def _get_focused_hwnd(self, hwnd=None):
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class GUITHREADINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.DWORD),
+                    ("flags", wintypes.DWORD),
+                    ("hwndActive", wintypes.HWND),
+                    ("hwndFocus", wintypes.HWND),
+                    ("hwndCapture", wintypes.HWND),
+                    ("hwndMenuOwner", wintypes.HWND),
+                    ("hwndMoveSize", wintypes.HWND),
+                    ("hwndCaret", wintypes.HWND),
+                    ("rcCaret", wintypes.RECT),
+                ]
+
+            hwnd = hwnd or self._paste_target_hwnd or ctypes.windll.user32.GetForegroundWindow()
+            if not hwnd:
+                return None
+            thread_id = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, None)
+            info = GUITHREADINFO()
+            info.cbSize = ctypes.sizeof(GUITHREADINFO)
+            if ctypes.windll.user32.GetGUIThreadInfo(thread_id, ctypes.byref(info)):
+                return info.hwndFocus or info.hwndCaret or info.hwndActive
+        except Exception:
+            pass
+        return None
+
+    def _tap_alt_for_foreground_permission(self):
         try:
             import win32api
             import win32con
-            time.sleep(0.05)
+            win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+            win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+        except Exception:
+            pass
+
+    def _restore_paste_target(self, hwnd, focus_hwnd=None):
+        if not hwnd:
+            return
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            if not user32.IsWindow(hwnd):
+                return
+            attached = False
+            focus_target = focus_hwnd if focus_hwnd and user32.IsWindow(focus_hwnd) else hwnd
+            target_thread = user32.GetWindowThreadProcessId(focus_target, None)
+            current_thread = kernel32.GetCurrentThreadId()
+            try:
+                if target_thread and target_thread != current_thread:
+                    attached = bool(user32.AttachThreadInput(current_thread, target_thread, True))
+                self._tap_alt_for_foreground_permission()
+                user32.ShowWindow(hwnd, 9)
+                user32.BringWindowToTop(hwnd)
+                user32.SetForegroundWindow(hwnd)
+                user32.SetActiveWindow(hwnd)
+                user32.SetFocus(focus_target)
+            finally:
+                if attached:
+                    user32.AttachThreadInput(current_thread, target_thread, False)
+        except Exception as e:
+            print(f"[Paste] restore focus failed: {e}")
+
+    def _should_type_text_directly(self, text):
+        if not text:
+            return False
+        if not get_config("unicode_text_paste", True):
+            return False
+        max_chars = int(get_config("unicode_text_paste_max_chars", 2000) or 0)
+        return max_chars <= 0 or len(text) <= max_chars
+
+    def _type_text_unicode(self, text):
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            INPUT_KEYBOARD = 1
+            KEYEVENTF_KEYUP = 0x0002
+            KEYEVENTF_UNICODE = 0x0004
+            ULONG_PTR = ctypes.c_ulonglong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_ulong
+
+            class KEYBDINPUT(ctypes.Structure):
+                _fields_ = [
+                    ("wVk", wintypes.WORD),
+                    ("wScan", wintypes.WORD),
+                    ("dwFlags", wintypes.DWORD),
+                    ("time", wintypes.DWORD),
+                    ("dwExtraInfo", ULONG_PTR),
+                ]
+
+            class INPUT_UNION(ctypes.Union):
+                _fields_ = [("ki", KEYBDINPUT)]
+
+            class INPUT(ctypes.Structure):
+                _fields_ = [("type", wintypes.DWORD), ("u", INPUT_UNION)]
+
+            units = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\r").encode("utf-16-le")
+            codes = [units[i] | (units[i + 1] << 8) for i in range(0, len(units), 2)]
+
+            for start in range(0, len(codes), 64):
+                chunk = codes[start:start + 64]
+                inputs = (INPUT * (len(chunk) * 2))()
+                idx = 0
+                for code in chunk:
+                    inputs[idx].type = INPUT_KEYBOARD
+                    inputs[idx].u.ki.wScan = code
+                    inputs[idx].u.ki.dwFlags = KEYEVENTF_UNICODE
+                    idx += 1
+                    inputs[idx].type = INPUT_KEYBOARD
+                    inputs[idx].u.ki.wScan = code
+                    inputs[idx].u.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+                    idx += 1
+                sent = ctypes.windll.user32.SendInput(len(inputs), inputs, ctypes.sizeof(INPUT))
+                if sent != len(inputs):
+                    print(f"[Paste] unicode typing partial: {sent}/{len(inputs)}")
+                    return False
+            return True
+        except Exception as e:
+            print(f"[Paste] unicode typing failed: {e}")
+            return False
+
+    def _simulate_paste(self, target_hwnd=None, focus_hwnd=None, direct_text=None):
+        """Simulate Ctrl+V into the window that was active before the popup."""
+        try:
+            import time
+
+            try:
+                import ctypes
+                current_hwnd = ctypes.windll.user32.GetForegroundWindow()
+            except Exception:
+                current_hwnd = None
+            if target_hwnd and current_hwnd != target_hwnd:
+                self._restore_paste_target(target_hwnd, focus_hwnd)
+            time.sleep(0.12)
+            if self._should_type_text_directly(direct_text):
+                if self._type_text_unicode(direct_text):
+                    return
+            self._simulate_paste_keybd_event()
+        except Exception as e:
+            print(f"[Paste] failed: {e}")
+            self._simulate_paste_sendinput()
+
+    def _simulate_paste_sendinput(self):
+        try:
+            import ctypes
+            from ctypes import wintypes
+            INPUT_KEYBOARD = 1
+            KEYEVENTF_KEYUP = 0x0002
+            KEYEVENTF_SCANCODE = 0x0008
+            ULONG_PTR = wintypes.WPARAM
+
+            class KEYBDINPUT(ctypes.Structure):
+                _fields_ = [
+                    ("wVk", wintypes.WORD),
+                    ("wScan", wintypes.WORD),
+                    ("dwFlags", wintypes.DWORD),
+                    ("time", wintypes.DWORD),
+                    ("dwExtraInfo", ULONG_PTR),
+                ]
+
+            class INPUT_UNION(ctypes.Union):
+                _fields_ = [("ki", KEYBDINPUT)]
+
+            class INPUT(ctypes.Structure):
+                _fields_ = [
+                    ("type", wintypes.DWORD),
+                    ("u", INPUT_UNION),
+                ]
+
+            # Ctrl down, V down, V up, Ctrl up using scan codes.
+            keys = [
+                (0x1D, 0),
+                (0x2F, 0),
+                (0x2F, KEYEVENTF_KEYUP),
+                (0x1D, KEYEVENTF_KEYUP),
+            ]
+
+            def _send(idx):
+                if idx >= len(keys):
+                    return
+                scan, flags = keys[idx]
+                inp = INPUT()
+                inp.type = INPUT_KEYBOARD
+                inp.u.ki.wVk = 0
+                inp.u.ki.wScan = scan
+                inp.u.ki.dwFlags = KEYEVENTF_SCANCODE | flags
+                ctypes.windll.user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+                self.window.after(25 if flags == 0 else 20, lambda: _send(idx + 1))
+
+            _send(0)
+        except Exception as e:
+            print(f"[Paste] SendInput failed: {e}")
+            self._simulate_paste_keybd_event()
+
+    def _simulate_paste_keybd_event(self):
+        try:
+            import time
+            import win32api
+            import win32con
             win32api.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
             time.sleep(0.02)
             win32api.keybd_event(ord('V'), 0, 0, 0)
@@ -1127,16 +1546,39 @@ class PopupWindow:
             time.sleep(0.02)
             win32api.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
         except Exception as e:
-            print(f"[Paste] failed: {e}")
+            print(f"[Paste] keybd_event failed: {e}")
 
     # ========== 子窗口 ==========
 
+    def _bring_window_to_front(self, win):
+        """把新开的子窗口带到前台。
+
+        弹窗本体是 NOACTIVATE 窗口，进程不持有前台权限时
+        Windows 会把新建的 Toplevel 压在前台应用后面，
+        必须显式置顶并激活，否则看起来像没打开。
+        """
+        try:
+            win.update_idletasks()
+            win.deiconify()
+            win.attributes("-topmost", True)
+            win.lift()
+            import ctypes
+            GA_ROOT = 2
+            hwnd = ctypes.windll.user32.GetAncestor(win.winfo_id(), GA_ROOT) or win.winfo_id()
+            self._tap_alt_for_foreground_permission()
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+            win.focus_force()
+        except Exception as e:
+            print(f"[Popup] bring window to front failed: {e}")
+
     def _open_cleanup(self):
-        CleanupWindow(self.window, self.storage)
+        w = CleanupWindow(self.window, self.storage)
+        self._bring_window_to_front(w.window)
 
     def _open_settings(self):
         from hotkey_manager import get_hotkey_manager
-        SettingsWindow(self.window, get_hotkey_manager())
+        w = SettingsWindow(self.window, get_hotkey_manager())
+        self._bring_window_to_front(w.window)
 
 
 # ============================================================
@@ -1149,6 +1591,7 @@ class CleanupWindow:
         self._sort_by = "use_count"
         self._filter_category = "all"
         self._check_vars = {}
+        self._thumbs = {}  # PhotoImage 必须持有引用，否则被 GC 后不显示
 
         self.window = tk.Toplevel(parent)
         self.window.title("Cleanup")
@@ -1199,7 +1642,8 @@ class CleanupWindow:
 
         def _mw(event):
             self._cc.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        self._cc.bind("<MouseWheel>", _mw)
+        # 绑在窗口上，光标悬停在列表条目等子组件上时滚轮也能生效
+        self.window.bind("<MouseWheel>", _mw)
 
         bf = tk.Frame(self.window, bg=bg)
         bf.pack(fill=tk.X, padx=16, pady=(8, 12))
@@ -1248,6 +1692,10 @@ class CleanupWindow:
             self._check_vars[fid] = var
             tk.Checkbutton(frame, variable=var, bg="#1c1c1c", fg="#ffffff",
                            selectcolor="#444444").pack(side=tk.LEFT)
+            if item["content_type"] == "image" and item["image_path"]:
+                photo = self._get_thumb(item["image_path"])
+                if photo:
+                    tk.Label(frame, image=photo, bg="#1c1c1c").pack(side=tk.LEFT, padx=(4, 0))
             summary = item["summary"] or truncate_text(item["text_content"] or "", 35)
             icon = get_display_icon(item["category"], is_fav)
             tk.Label(frame, text=f"{icon} {summary}", bg="#1c1c1c", fg="#ffffff",
@@ -1256,6 +1704,19 @@ class CleanupWindow:
                      font=("Segoe UI", 9)).pack(side=tk.RIGHT, padx=(0, 8))
             if is_fav:
                 tk.Label(frame, text="[已收藏]", bg="#1c1c1c", fg="#f0c040", font=("Segoe UI", 9)).pack(side=tk.RIGHT)
+
+    def _get_thumb(self, image_path):
+        """获取缩略图（带缓存）"""
+        if image_path in self._thumbs:
+            return self._thumbs[image_path]
+        try:
+            img = PILImage.open(image_path)
+            img.thumbnail((36, 36), PILImage.Resampling.LANCZOS)
+            photo = ImageTk.PhotoImage(img)
+            self._thumbs[image_path] = photo
+            return photo
+        except Exception:
+            return None
 
     def _toggle_all(self, state):
         for var in self._check_vars.values():

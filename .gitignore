@@ -32,3 +32,16 @@ demo-video/.hyperframes/
 
 # Config (keep default, user configs shouldn't be tracked)
 config.json
+
+# Backups & scratch
+*.bak-*
+*.disabled
+.agents/
+node_modules/
+package.json
+package-lock.json
+skills-lock.json
+quality-report-*.md
+demo-video/
+demo_script*.py
+test_hotkey*.py
