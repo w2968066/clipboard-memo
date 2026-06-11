@@ -50,17 +50,20 @@ jobs:
         with:
           name: ClipboardMemo ${{ github.ref_name }}
           body: |
-            ## 鍓创鏉垮蹇樺綍 ${{ github.ref_name }}
+            ## 剪贴板备忘录 ${{ github.ref_name }}
 
-            鏋佺畝鏈湴鍓创鏉跨鐞嗗伐鍏凤紝涓撲负 AI 鐢ㄦ埛璁捐銆?
-            ### 浣跨敤鏂瑰紡
-            1. 涓嬭浇 `ClipboardMemo.exe`
-            2. 鍙屽嚮杩愯锛屾墭鐩樿嚜鍔ㄥ惎鍔?            3. 鎸?`Ctrl+Shift+V` 鍛煎嚭娴獥
-            4. 澶嶅埗鏂囨湰/鎴浘锛岃嚜鍔ㄨ褰?
-            ### 鍙樻洿
-            鏌ョ湅 [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+            极简本地剪贴板管理工具，专为 AI 用户设计。
 
-            ### 鏍￠獙
+            ### 使用方式
+            1. 下载 `ClipboardMemo.exe`
+            2. 双击运行，托盘自动启动
+            3. 按 `Ctrl+Shift+V` 呼出浮窗
+            4. 复制文本/截图，自动记录
+
+            ### 变更
+            查看 [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+
+            ### 校验
             ```
             sha256sum ClipboardMemo.exe
             ```
