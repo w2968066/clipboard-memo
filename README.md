@@ -1,11 +1,11 @@
-# 鍓创鏉垮蹇樺綍 (Clipboard Memo)
+# 剪贴板备忘录 (Clipboard Memo)
 
 <p align="center">
   <img src="assets/icon.png" width="128" alt="Clipboard Memo">
 </p>
 
 <p align="center">
-  <b>鏋佺畝鏈湴鍓创鏉跨鐞嗗伐鍏凤紝涓撲负 AI 鐢ㄦ埛璁捐</b>
+  <b>极简本地剪贴板管理工具，专为 AI 用户设计</b>
 </p>
 
 <p align="center">
@@ -20,64 +20,67 @@
 
 ## Why this exists
 
-> "璇曡繃 7 娆惧壀璐存澘宸ュ叿鍚庯紝鎴戣姳浜?3 涓櫄涓婏紝鍐欎簡鑷繁鐨勩€?
+> "试过 7 款剪贴板工具后，我花了 3 个晚上，写了自己的。"
 
-甯傞潰涓婂ぇ澶氭暟鍓创鏉垮伐鍏峰お閲嶄簡鈥斺€斿嚑鍗?MB 瀹夎鍖呫€佹敞鍐岃处鍙枫€佷簯鍚屾銆佷粯璐瑰脊绐椼€備綔涓?AI 鐢ㄦ埛锛屾垜鍙兂瀛樹釜鎻愮ず璇嶃€?
-**鍓创鏉垮蹇樺綍**鏄竴涓?Python 鑴氭湰浣撻噺鐨勫伐鍏枫€? 涓緷璧栥€侀浂缃戠粶銆佺函鏈湴銆佸畬鍏ㄥ紑婧愩€?
+市面上大多数剪贴板工具太重了——几十 MB 安装包、注册账号、云同步、付费弹窗。作为 AI 用户，我只想存个提示词。
+
+**剪贴板备忘录**是一个 Python 脚本体量的工具。3 个依赖、零网络、纯本地、完全开源。
+
 ---
 
 ## Features
 
-| 鍔熻兘 | 璇存槑 |
+| 功能 | 说明 |
 |---|---|
-| 馃攳 **鑷姩鎹曡幏** | 澶嶅埗鏂囨湰鎴栨埅鍥捐嚜鍔ㄤ繚瀛橈紝500ms 杞妫€娴?|
-| 馃 **鏅鸿兘鍒嗙被** | 绾湰鍦板淇″彿璇勫垎寮曟搸锛岃嚜鍔ㄨ瘑鍒?Prompt/鍥剧墖/鏂囨湰 |
-| 鈱笍 **鐑敭鍛煎嚭** | `Ctrl+Shift+V` 鍏ㄥ眬鐑敭锛岄紶鏍囪窡闅忓脊鍑?|
-| 馃彿锔?**蹇€熷垎绫?* | 鎮仠鏉＄洰 + 鏁板瓧閿?1-4锛氭敹钘?Prompt/鍥剧墖/鍒犻櫎 |
-| 馃摉 **鐘舵€佹爣璇?* | 宸插垎绫?鏈垎绫?馃摉 鏍囪瘑锛屾敹钘?猸愶笍 鏍囪瘑 |
-| 馃搨 **瀛愬垎绫?* | Prompt 鍜屽浘鐗囧悇 4 绾у彲鑷畾涔夊瓙鍒嗙被 |
-| 馃攧 **鍗曟潯鍒锋柊** | 鍒嗙被/鏀惰棌鎿嶄綔鍙埛鏂板崟鏉＄姸鎬侊紝涓嶅崱椤?|
-| 馃捑 **杞垹闄?* | 宸插垹闄ゅ唴瀹逛繚鐣?7 澶╋紝闅忔椂鎭㈠ |
-| 馃Ч **缂撳瓨绠＄悊** | 鏄剧ず鏁版嵁搴?鍥剧墖鎬诲崰鐢紝鎵归噺娓呯悊 |
-| 馃寪 **鍥介檯鍖?* | 涓枃/鑻辨枃鍙岃鏀寔 |
-| 馃殌 **寮€鏈鸿嚜鍚?* | 鎵樼洏鑿滃崟涓€閿垏鎹?|
-| 鈿欙笍 **璁剧疆** | 鑷畾涔夌儹閿€佸瓙鍒嗙被鍚嶇О銆佽瑷€ |
+| 🔍 **自动捕获** | 复制文本或截图自动保存，500ms 轮询检测 |
+| 🧠 **智能分类** | 纯本地多信号评分引擎，自动识别 Prompt/图片/文本 |
+| ⌨️ **热键呼出** | `Ctrl+Shift+V` 全局热键，鼠标跟随弹出 |
+| 🏷️ **快速分类** | 悬停条目 + 数字键 1-4：收藏/Prompt/图片/删除 |
+| 📖 **状态标识** | 已分类/未分类 📖 标识，收藏 ⭐️ 标识 |
+| 📂 **子分类** | Prompt 和图片各 4 级可自定义子分类 |
+| 🔄 **单条刷新** | 分类/收藏操作只刷新单条状态，不卡顿 |
+| 💾 **软删除** | 已删除内容保留 7 天，随时恢复 |
+| 🧹 **缓存管理** | 显示数据库+图片总占用，批量清理 |
+| 🌐 **国际化** | 中文/英文双语支持 |
+| 🚀 **开机自启** | 托盘菜单一键切换 |
+| ⚙️ **设置** | 自定义热键、子分类名称、语言 |
 
 ---
 
 ## Quick Start
 
-### 1. 瀹夎渚濊禆
+### 1. 安装依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-3 涓緷璧栵細
-- `pystray` 鈥?绯荤粺鎵樼洏
-- `Pillow` 鈥?鍥剧墖缂╃暐鍥?- `pywin32` 鈥?鍓创鏉胯鍐欍€佸叏灞€鐑敭
+3 个依赖：
+- `pystray` — 系统托盘
+- `Pillow` — 图片缩略图
+- `pywin32` — 剪贴板读写、全局热键
 
-### 2. 鍚姩
+### 2. 启动
 
 ```bash
 python main.py
 ```
 
-### 3. 浣跨敤
+### 3. 使用
 
-| 鎿嶄綔 | 璇存槑 |
+| 操作 | 说明 |
 |---|---|
-| `Ctrl+Shift+V` | 鍛煎嚭/闅愯棌娴獥 |
-| 鐐瑰嚮鏉＄洰 | 绮樿创鍒板綋鍓嶅厜鏍囦綅缃?|
-| 鐐瑰嚮 `鍒嗙被` 鎸夐挳 | 杩涘叆蹇€熷垎绫绘ā寮?|
-| 鎮仠鏉＄洰 + `1/2/3/4` | 鏀惰棌 / Prompt / 鍥剧墖 / 鍒犻櫎 |
-| `Backspace` / `Delete` | 鍒犻櫎褰撳墠鎮仠鏉＄洰 |
-| `Esc` | 鍏抽棴娴獥 |
-| `鈫戔啌` | 瀵艰埅閫夋嫨鏉＄洰 |
-| `Enter` | 绮樿创閫変腑鏉＄洰 |
-| 鍙抽敭鏉＄洰 | 澶嶅埗/鏀惰棌/缂栬緫鏍囬/鍒犻櫎 |
+| `Ctrl+Shift+V` | 呼出/隐藏浮窗 |
+| 点击条目 | 粘贴到当前光标位置 |
+| 点击 `分类` 按钮 | 进入快速分类模式 |
+| 悬停条目 + `1/2/3/4` | 收藏 / Prompt / 图片 / 删除 |
+| `Backspace` / `Delete` | 删除当前悬停条目 |
+| `Esc` | 关闭浮窗 |
+| `↑↓` | 导航选择条目 |
+| `Enter` | 粘贴选中条目 |
+| 右键条目 | 复制/收藏/编辑标题/删除 |
 
-### 4. 涓€閿墦鍖咃紙鍙€夛級
+### 4. 一键打包（可选）
 
 ```bash
 pip install pyinstaller
@@ -90,65 +93,82 @@ pyinstaller --onefile --windowed --name ClipboardMemo main.py
 
 ```
 clipboard-memo/
-鈹溾攢鈹€ main.py              # 搴旂敤鍏ュ彛锛屽惎鍔ㄦ祦绋嬬紪鎺?鈹溾攢鈹€ popup_window.py       # 寮圭獥 UI锛堟诞绐?+ 娓呯悊绐楀彛锛?鈹溾攢鈹€ clipboard_monitor.py  # 鍓创鏉胯疆璇㈢洃鎺?鈹溾攢鈹€ classifier.py         # 鏂囨湰鍒嗙被寮曟搸锛堝淇″彿璇勫垎锛?鈹溾攢鈹€ storage.py            # SQLite 鏁版嵁灞傦紙WAL 妯″紡锛?鈹溾攢鈹€ hotkey_manager.py     # Windows 鍏ㄥ眬鐑敭锛圧egisterHotKey锛?鈹溾攢鈹€ tray_icon.py          # 绯荤粺鎵樼洏锛坧ystray锛?鈹溾攢鈹€ settings_window.py    # 璁剧疆绐楀彛
-鈹溾攢鈹€ config.py             # 閰嶇疆绠＄悊锛堝唴瀛樼紦瀛橈級
-鈹溾攢鈹€ utils.py              # 宸ュ叿鍑芥暟
-鈹溾攢鈹€ i18n.py               # 鍥介檯鍖栵紙zh/en锛?鈹溾攢鈹€ config.json           # 杩愯鏃堕厤缃?鈹溾攢鈹€ data/clipboard.db     # SQLite 鏁版嵁搴擄紙鑷姩鍒涘缓锛?鈹溾攢鈹€ assets/images/        # 鍥剧墖瀛樺偍
-鈹斺攢鈹€ requirements.txt      # 3 涓緷璧?```
+├── main.py              # 应用入口，启动流程编排
+├── popup_window.py       # 弹窗 UI（浮窗 + 清理窗口）
+├── clipboard_monitor.py  # 剪贴板轮询监控
+├── classifier.py         # 文本分类引擎（多信号评分）
+├── storage.py            # SQLite 数据层（WAL 模式）
+├── hotkey_manager.py     # Windows 全局热键（RegisterHotKey）
+├── tray_icon.py          # 系统托盘（pystray）
+├── settings_window.py    # 设置窗口
+├── config.py             # 配置管理（内存缓存）
+├── utils.py              # 工具函数
+├── i18n.py               # 国际化（zh/en）
+├── config.json           # 运行时配置
+├── data/clipboard.db     # SQLite 数据库（自动创建）
+├── assets/images/        # 图片存储
+└── requirements.txt      # 3 个依赖
+```
 
 ### Classification Engine
 
 ```
-classify_text(text) 鈫?(category, summary, subcategory)
+classify_text(text) → (category, summary, subcategory)
 
-澶氫俊鍙疯瘎鍒嗘潈閲嶏細
-  鎸囦护鎬у姩璇?   鏉冮噸 4  (涓婇檺 12)
-  瑙掕壊瀹氫箟妯″紡  鏉冮噸 5  (鍛戒腑鍗虫弧鍒?
-  缁撴瀯鍖栫壒寰?   鏉冮噸 2-3 (涓婇檺 6)
-  鎻愰棶妯″紡      鏉冮噸 2  (涓婇檺 4)
-  浠ｇ爜鐩稿叧      鏉冮噸 2  (涓婇檺 4)
-  闀垮害绯绘暟      脳0.5 ~ 脳1.0
-  鈫?鎬诲垎 鈮?5 鈫?"prompt" | 鍚﹀垯 "other_text"
+多信号评分权重：
+  指令性动词    权重 4  (上限 12)
+  角色定义模式  权重 5  (命中即满分)
+  结构化特征    权重 2-3 (上限 6)
+  提问模式      权重 2  (上限 4)
+  代码相关      权重 2  (上限 4)
+  长度系数      ×0.5 ~ ×1.0
+  → 总分 ≥ 5 → "prompt" | 否则 "other_text"
 ```
 
 ### Hotkey System
 
 ```
-Windows RegisterHotKey + HWND_MESSAGE 娑堟伅绐楀彛
-鈫?PeekMessageW 闈為樆濉炴秷鎭惊鐜?鈫?鏀寔鐑垏鎹紙reregister 鏃犻渶閲嶅惎锛?鈫?64-bit 鍘熺敓鏀寔锛堟樉寮忓０鏄?ctypes argtypes锛?```
+Windows RegisterHotKey + HWND_MESSAGE 消息窗口
+→ PeekMessageW 非阻塞消息循环
+→ 支持热切换（reregister 无需重启）
+→ 64-bit 原生支持（显式声明 ctypes argtypes）
+```
 
 ---
 
 ## Tech Stack
 
-| 灞?| 鎶€鏈?|
+| 层 | 技术 |
 |---|---|
-| UI | tkinter (overrideredirect 鏃犺竟妗嗙獥鍙? |
-| 鏁版嵁 | SQLite (WAL, threading.local 杩炴帴姹? |
-| 鍒嗙被 | 绾湰鍦版鍒欒鍒欏紩鎿?|
-| 鐑敭 | Windows RegisterHotKey API (ctypes) |
-| 鎵樼洏 | pystray + PIL 鍥炬爣缁樺埗 |
-| 閰嶇疆 | JSON 鏂囦欢 + 鍐呭瓨缂撳瓨 |
-| 闊虫晥 | (鏃?鈥?瀹屽叏闈欓粯杩愯) |
+| UI | tkinter (overrideredirect 无边框窗口) |
+| 数据 | SQLite (WAL, threading.local 连接池) |
+| 分类 | 纯本地正则规则引擎 |
+| 热键 | Windows RegisterHotKey API (ctypes) |
+| 托盘 | pystray + PIL 图标绘制 |
+| 配置 | JSON 文件 + 内存缓存 |
+| 音效 | (无 — 完全静默运行) |
 
 ---
 
 ## FAQ
 
-**Q: 涓轰粈涔堝彧鏈?Windows 鐗堬紵**
-A: 鐩墠浣跨敤浜?Windows 鍘熺敓 API锛圧egisterHotKey銆佸壀璐存澘璇诲啓锛夈€俶acOS/Linux 鏀寔璁″垝涓€?
-**Q: 鏁版嵁瀹夊叏鍚楋紵**
-A: 瀹屽叏鏈湴杩愯锛岄浂缃戠粶璇锋眰銆係QLite 鏂囦欢鍦?`data/clipboard.db`锛屽浘鐗囧湪 `assets/images/`銆?
-**Q: 鎬庝箞鍗歌浇锛?*
-A: 鍒犻櫎鏂囦欢澶瑰嵆鍙€傚鏋滃惎鐢ㄤ簡寮€鏈鸿嚜鍚紝鍏堝湪鎵樼洏鑿滃崟涓叧闂€?
+**Q: 为什么只有 Windows 版？**
+A: 目前使用了 Windows 原生 API（RegisterHotKey、剪贴板读写）。macOS/Linux 支持计划中。
+
+**Q: 数据安全吗？**
+A: 完全本地运行，零网络请求。SQLite 文件在 `data/clipboard.db`，图片在 `assets/images/`。
+
+**Q: 怎么卸载？**
+A: 删除文件夹即可。如果启用了开机自启，先在托盘菜单中关闭。
+
 ---
 
 ## License
 
-MIT 漏 2026
+MIT © 2026
 
 ---
 
 <p align="center">
-  <sub>Built with 鉂わ笍 for the vibecoding community. #vibecoding澶ц祻</sub>
+  <sub>Built with ❤️ for the vibecoding community. #vibecoding大赏</sub>
 </p>
