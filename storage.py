@@ -1,5 +1,6 @@
 """
-鏁版嵁瀛樺偍妯″潡 - SQLite 鏁版嵁搴撴搷浣滐紙绾跨▼杩炴帴澶嶇敤锛?"""
+数据存储模块 - SQLite 数据库操作（线程连接复用）
+"""
 
 import sqlite3
 import os
@@ -9,7 +10,7 @@ from config import DB_PATH, DATA_DIR, get_config
 
 
 class Storage:
-    """鍓创鏉挎暟鎹瓨鍌ㄧ鐞?""
+    """剪贴板数据存储管理"""
 
     def __init__(self):
         os.makedirs(DATA_DIR, exist_ok=True)
@@ -18,7 +19,7 @@ class Storage:
         self._init_db()
 
     def _get_conn(self):
-        """鑾峰彇绾跨▼鏈湴杩炴帴锛堣嚜鍔ㄥ鐢級"""
+        """获取线程本地连接（自动复用）"""
         conn = getattr(self._local, 'conn', None)
         if conn is None:
             conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -29,7 +30,7 @@ class Storage:
         return conn
 
     def _close_conn(self):
-        """鍏抽棴褰撳墠绾跨▼鐨勮繛鎺ワ紙閫€鍑烘椂璋冪敤锛?""
+        """关闭当前线程的连接（退出时调用）"""
         conn = getattr(self._local, 'conn', None)
         if conn:
             try:
@@ -69,17 +70,18 @@ class Storage:
                 CREATE INDEX IF NOT EXISTS idx_use_count ON clipboard_items(use_count);
                 CREATE INDEX IF NOT EXISTS idx_deleted_at ON clipboard_items(deleted_at);
             """)
-            # 鍏煎鏃ц〃锛氭坊鍔犲彲鑳界己澶辩殑鍒?            for col_sql in [
+            # 兼容旧表：添加可能缺失的列
+            for col_sql in [
                 "ALTER TABLE clipboard_items ADD COLUMN subcategory TEXT DEFAULT ''",
                 "ALTER TABLE clipboard_items ADD COLUMN deleted_at TEXT",
             ]:
                 try:
                     conn.execute(col_sql)
                 except sqlite3.OperationalError:
-                    pass  # 鍒楀凡瀛樺湪
+                    pass  # 列已存在
             conn.commit()
 
-    # ========== 鍐欏叆 ==========
+    # ========== 写入 ==========
 
     def add_item(self, content_type, content_hash, text_content=None,
                  image_path=None, category="other_text", subcategory="",
@@ -97,7 +99,7 @@ class Storage:
             return cursor.lastrowid
 
     def get_item_by_id(self, item_id):
-        """閫氳繃 ID 绮剧‘鏌ヨ鍗曟潯璁板綍"""
+        """通过 ID 精确查询单条记录"""
         conn = self._get_conn()
         row = conn.execute(
             "SELECT * FROM clipboard_items WHERE id=? LIMIT 1", (item_id,)
@@ -156,7 +158,7 @@ class Storage:
             conn.execute("UPDATE clipboard_items SET summary=? WHERE id=?", (summary, item_id))
             conn.commit()
 
-    # ========== 杞垹闄?==========
+    # ========== 软删除 ==========
 
     def _ensure_list(self, item_ids):
         return [item_ids] if isinstance(item_ids, int) else list(item_ids)
@@ -194,7 +196,7 @@ class Storage:
             conn.commit()
 
     def purge_expired_deleted(self, days=7):
-        """娓呴櫎宸插垹闄よ秴杩?N 澶╃殑鏉＄洰"""
+        """清除已删除超过 N 天的条目"""
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
         with self._lock:
             conn = self._get_conn()
@@ -204,7 +206,7 @@ class Storage:
             return n
 
     def clear_all_deleted(self):
-        """娓呯┖鎵€鏈夊凡鍒犻櫎鏉＄洰"""
+        """清空所有已删除条目"""
         with self._lock:
             conn = self._get_conn()
             cur = conn.execute("DELETE FROM clipboard_items WHERE deleted=1")
@@ -212,10 +214,10 @@ class Storage:
             conn.commit()
             return n
 
-    # ========== 鏌ヨ锛圖RY WHERE 鏋勫缓锛?=========
+    # ========== 查询（DRY WHERE 构建）==========
 
     def _build_where(self, category=None, subcategory=None, search=None, tab="recent"):
-        """鏋勫缓鏌ヨ鏉′欢鍜屽弬鏁帮紝閬垮厤 get_items / get_item_count 閲嶅閫昏緫"""
+        """构建查询条件和参数，避免 get_items / get_item_count 重复逻辑"""
         conditions = []
         params = []
 
@@ -301,11 +303,11 @@ class Storage:
             return n
 
     def close(self):
-        """鍏抽棴褰撳墠绾跨▼鐨勬暟鎹簱杩炴帴锛堥€€鍑烘椂璋冪敤锛?""
+        """关闭当前线程的数据库连接（退出时调用）"""
         self._close_conn()
 
     def get_storage_size(self):
-        """鑾峰彇鏁版嵁搴撳拰鍥剧墖鍗犵敤鐨勬€诲瓧鑺傛暟"""
+        """获取数据库和图片占用的总字节数"""
         total = 0
         if os.path.exists(DB_PATH):
             total += os.path.getsize(DB_PATH)
